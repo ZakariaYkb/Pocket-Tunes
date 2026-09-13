@@ -36,6 +36,7 @@
       display: inline-flex; 
       align-items: center; 
       justify-content: center; 
+      gap: 6px;
       background: #2da44e; 
       color: white; 
       padding: 8px 16px; 
@@ -130,10 +131,18 @@
       .category-actions { width: 100%; justify-content: space-between; }
       .category-actions .btn { flex: 1; text-align: center; }
 
-      .audio-item { padding: 10px; gap: 8px; }
-      .audio-cover-art, .audio-cover-placeholder { width: 44px; height: 44px; font-size: 1.2em; }
-      .audio-actions { gap: 4px; }
-      .audio-actions .btn { padding: 6px 8px; font-size: 0.78em; }
+      .audio-item { padding: 8px 10px; gap: 10px; }
+      .audio-cover-art, .audio-cover-placeholder { width: 46px; height: 46px; font-size: 1.3em; }
+      .audio-actions { gap: 6px; }
+
+      /* Mobile Download Icon Only Optimization */
+      .download-btn .btn-text { display: none; }
+      .download-btn { padding: 8px 10px; border-radius: 6px; }
+      .download-btn svg { width: 18px; height: 18px; }
+
+      .delete-btn .btn-text { display: none; }
+      .delete-btn { padding: 8px 10px; border-radius: 6px; }
+      .delete-btn svg { width: 16px; height: 16px; }
 
       .modal-content { padding: 18px; }
     }
@@ -285,7 +294,7 @@
 
     // Toggle Category Expansion
     function toggleCategoryCollapse(catClass, event) {
-      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT') return;
+      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.closest('button')) return;
       
       const listElement = document.getElementById(`audio-list-${catClass}`);
       if (listElement) {
@@ -333,7 +342,10 @@
 
           const canDelete = activeUser && (activeUser.profile_name === track.uploader_name || activeUser.is_admin);
           const deleteBtnHTML = canDelete 
-            ? `<button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}')" class="btn btn-danger btn-sm">Delete</button>` 
+            ? `<button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}')" class="btn btn-danger btn-sm delete-btn" title="Delete Track">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span class="btn-text">Delete</span>
+               </button>` 
             : '';
 
           tracksHTML += `
@@ -346,7 +358,10 @@
                 </div>
               </div>
               <div class="audio-actions">
-                <button onclick='downloadSingleTrack(${JSON.stringify(track).replace(/'/g, "&apos;")})' class="btn btn-secondary btn-sm btn-outline">Download (.ptunes)</button>
+                <button onclick='downloadSingleTrack(${JSON.stringify(track).replace(/'/g, "&apos;")})' class="btn btn-secondary btn-sm btn-outline download-btn" title="Download (.ptunes)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span class="btn-text">Download (.ptunes)</span>
+                </button>
                 ${deleteBtnHTML}
               </div>
             </div>
