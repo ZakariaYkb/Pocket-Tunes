@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pocket Tunes - Verified Music Hub</title>
   
-  <!-- JSZip for dynamic package generation -->
+  <!-- JSZip for dynamic package generation and reading -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -16,19 +16,21 @@
     .btn { display: inline-block; background: #2da44e; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; border: none; cursor: pointer; }
     .btn-secondary { background: #0366d6; }
     .btn-outline { background: transparent; color: #0366d6; border: 1px solid #0366d6; }
-    .btn-danger { background: #cf222e; }
     .btn-sm { padding: 6px 12px; font-size: 0.85em; }
     .header-action { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .disclaimer-banner { background: #e8f5e9; border: 1px solid #81c784; padding: 12px 16px; border-radius: 8px; font-size: 0.9em; margin-bottom: 20px; color: #1b5e20; }
     .verified-badge { color: #1da1f2; font-weight: bold; margin-left: 5px; }
     
-    /* Category Container Styling */
+    /* Collapsible Category Styling */
     .category-group { border: 1px solid #e1e4e8; border-radius: 8px; margin-bottom: 20px; background: #fff; overflow: hidden; }
-    .category-header { background: #f1f3f5; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e8; }
+    .category-header { background: #f1f3f5; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e8; cursor: pointer; user-select: none; }
+    .category-header:hover { background: #eaecef; }
     .category-title { font-size: 1.2em; font-weight: bold; }
     .category-actions { display: flex; gap: 10px; align-items: center; }
     
-    .audio-list { padding: 15px 20px; }
+    .audio-list { max-height: 0; overflow: hidden; transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out; padding: 0 20px; }
+    .audio-list.expanded { max-height: 2000px; padding: 15px 20px; }
+    
     .audio-item { display: flex; justify-content: space-between; align-items: center; background: #fafbfc; padding: 12px 16px; border: 1px solid #eaecef; border-radius: 6px; margin-bottom: 10px; }
     .audio-left { display: flex; align-items: center; gap: 12px; }
     .audio-meta { font-size: 0.85em; color: #57606a; }
@@ -39,6 +41,9 @@
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
     .close-btn { background: none; border: none; font-size: 1.5em; cursor: pointer; color: #57606a; }
     input, select, textarea { width: 100%; padding: 8px; margin: 6px 0 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    .divider { text-align: center; font-weight: bold; margin: 15px 0; color: #57606a; position: relative; }
+    .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: 42%; height: 1px; background: #e1e4e8; }
+    .divider::before { left: 0; } .divider::after { right: 0; }
     
     .admin-card { border: 1px solid #cf222e; background: #fff5f5; }
   </style>
@@ -61,7 +66,7 @@
     <div class="header-action">
       <div>
         <h2>Community Categories</h2>
-        <p style="margin:0; color:#57606a; font-size: 0.9em;">Download full categories or select specific audio tracks.</p>
+        <p style="margin:0; color:#57606a; font-size: 0.9em;">Click a category to expand songs, select tracks, or download.</p>
       </div>
       <div>
         <button onclick="openModal('authModal')" class="btn btn-outline">Creator Sign In / Apply</button>
@@ -74,7 +79,7 @@
     </div>
   </div>
 
-  <!-- Owner Admin Portal (Hidden by default, toggle with key combo or login) -->
+  <!-- Owner Admin Portal -->
   <div class="card admin-card" id="adminPanel" style="display:none;">
     <h3 style="color:#cf222e; margin-top:0;">Owner Approval Portal</h3>
     <p>Approve or reject creator verification requests below:</p>
@@ -106,23 +111,33 @@
     </div>
   </div>
 
-  <!-- Upload Modal -->
+  <!-- Upload / Import Modal -->
   <div class="modal-overlay" id="uploadModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 style="margin:0;">Add Audio to Category</h3>
+        <h3 style="margin:0;">Add Audio / Import Package</h3>
         <button class="close-btn" onclick="closeModal('uploadModal')">&times;</button>
       </div>
 
       <form id="uploadForm">
-        <label>Category Name:</label>
+        <label>Target Category Name:</label>
         <input type="text" id="categoryName" required placeholder="e.g. Chill Beats">
 
+        <!-- Option A: Import Package -->
+        <div style="background:#f6f8fa; padding:12px; border-radius:8px; border:1px solid #e1e4e8;">
+          <label style="font-weight:bold; color:#0366d6;">Import App Package (.ptunes / .zip):</label>
+          <input type="file" id="importPackageFile" accept=".ptunes,.zip">
+          <button type="button" id="importBtn" onclick="handlePackageImport()" class="btn btn-secondary btn-sm" style="width:100%; margin-top:5px;">Import Package Content</button>
+        </div>
+
+        <div class="divider">OR ADD SINGLE TRACK</div>
+
+        <!-- Option B: Single Audio Upload -->
         <label>Song Title / Audio Name:</label>
-        <input type="text" id="songTitle" required placeholder="e.g. Midnight Drive">
+        <input type="text" id="songTitle" placeholder="e.g. Midnight Drive">
 
         <label>Artist Name:</label>
-        <input type="text" id="artistName" required placeholder="e.g. Zakaria">
+        <input type="text" id="artistName" placeholder="e.g. Zakaria">
 
         <label>Icon Key:</label>
         <select id="iconKey">
@@ -132,16 +147,16 @@
         </select>
 
         <label>Audio File (.mp3):</label>
-        <input type="file" id="audioFile" accept="audio/*" required>
+        <input type="file" id="audioFile" accept="audio/*">
 
         <label>Cover Art (Optional Image):</label>
         <input type="file" id="artFile" accept="image/*">
 
         <label>Lyrics (Optional):</label>
-        <textarea id="songLyrics" rows="3" placeholder="Paste lyrics here..."></textarea>
+        <textarea id="songLyrics" rows="2" placeholder="Paste lyrics here..."></textarea>
 
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <button type="button" id="uploadBtn" onclick="handleUpload()" class="btn" style="flex:1;">Publish Audio</button>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button type="button" id="uploadBtn" onclick="handleUpload()" class="btn" style="flex:1;">Publish Audio Track</button>
           <button type="button" onclick="closeModal('uploadModal')" class="btn btn-outline">Cancel</button>
         </div>
       </form>
@@ -168,6 +183,16 @@
       openModal('uploadModal');
     }
 
+    // Toggle Category Expansion
+    function toggleCategoryCollapse(catClass, event) {
+      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT') return;
+      
+      const listElement = document.getElementById(`audio-list-${catClass}`);
+      if (listElement) {
+        listElement.classList.toggle('expanded');
+      }
+    }
+
     // 1. Load Categories and Tracks
     async function loadCategories() {
       const container = document.getElementById('categoriesContainer');
@@ -178,7 +203,6 @@
         return;
       }
 
-      // Group tracks by category_name
       const categories = {};
       songs.forEach(song => {
         const cat = song.category_name;
@@ -192,13 +216,14 @@
 
       Object.keys(categories).forEach(catName => {
         const catData = categories[catName];
+        const catClass = catName.replace(/\s+/g, '_');
         let tracksHTML = '';
 
         catData.tracks.forEach(track => {
           tracksHTML += `
             <div class="audio-item">
               <div class="audio-left">
-                <input type="checkbox" class="track-checkbox-${catName.replace(/\s+/g, '_')}" data-song='${JSON.stringify(track)}' checked>
+                <input type="checkbox" class="track-checkbox-${catClass}" data-song='${JSON.stringify(track)}' onchange="updateToggleBtnState('${catClass}')">
                 <div>
                   <strong>${track.title}</strong>
                   <div class="audio-meta">Artist: ${track.artist_name}</div>
@@ -211,17 +236,17 @@
 
         container.innerHTML += `
           <div class="category-group">
-            <div class="category-header">
+            <div class="category-header" onclick="toggleCategoryCollapse('${catClass}', event)">
               <div>
-                <span class="category-title">${catName}</span>
+                <span class="category-title">▶ ${catName}</span>
                 <span style="color: #57606a; font-size: 0.85em; margin-left:10px;">By: <strong>${catData.creator}</strong> <span class="verified-badge">✔ Verified</span></span>
               </div>
               <div class="category-actions">
-                <button onclick="toggleCategorySelect('${catName.replace(/\s+/g, '_')}', true)" class="btn btn-outline btn-sm">Select All</button>
+                <button id="toggle-btn-${catClass}" onclick="toggleCategorySelect('${catClass}')" class="btn btn-outline btn-sm">Select All</button>
                 <button onclick="downloadSelectedPackage('${catName}')" class="btn btn-secondary btn-sm">Download Selected (.ptunes)</button>
               </div>
             </div>
-            <div class="audio-list">
+            <div class="audio-list" id="audio-list-${catClass}">
               ${tracksHTML}
             </div>
           </div>
@@ -229,9 +254,25 @@
       });
     }
 
-    // Toggle Checkboxes
-    function toggleCategorySelect(catClass, checkState) {
-      document.querySelectorAll(`.track-checkbox-${catClass}`).forEach(cb => cb.checked = checkState);
+    // Toggle Select All / Deselect All
+    function toggleCategorySelect(catClass) {
+      const checkboxes = document.querySelectorAll(`.track-checkbox-${catClass}`);
+      const btn = document.getElementById(`toggle-btn-${catClass}`);
+      
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      const newState = !allChecked;
+
+      checkboxes.forEach(cb => cb.checked = newState);
+      btn.innerText = newState ? 'Deselect All' : 'Select All';
+    }
+
+    // Dynamically update button label if individual checkboxes are clicked manually
+    function updateToggleBtnState(catClass) {
+      const checkboxes = document.querySelectorAll(`.track-checkbox-${catClass}`);
+      const btn = document.getElementById(`toggle-btn-${catClass}`);
+      
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      btn.innerText = allChecked ? 'Deselect All' : 'Select All';
     }
 
     // 2. Download Selected Tracks as 1 Combined .ptunes Package
@@ -251,7 +292,6 @@
         const song = JSON.parse(selectedBoxes[i].getAttribute('data-song'));
         const audioFileName = `${crypto.randomUUID()}.mp3`;
 
-        // Fetch raw audio content
         const audioBlob = await fetch(song.audio_url).then(r => r.blob());
         zip.folder("audio").file(audioFileName, audioBlob);
 
@@ -289,7 +329,6 @@
       a.click();
     }
 
-    // Single Track Download Wrapper
     async function downloadSingleTrack(song) {
       const zip = new JSZip();
       const audioFileName = `${crypto.randomUUID()}.mp3`;
@@ -327,52 +366,90 @@
       a.click();
     }
 
-    // 3. User Authentication & Verification Application
-    async function handleAuthSubmit(mode) {
-      const email = document.getElementById('authEmail').value.trim();
-      const name = document.getElementById('authProfileName').value.trim();
-      const pass = document.getElementById('authPassword').value.trim();
+    // 3. Import Full .ptunes / Zip Package into Selected Category
+    async function handlePackageImport() {
+      if (!activeUser || !activeUser.is_verified) return;
 
-      if (!email || !name || !pass) {
-        alert("Please fill in all account fields.");
+      const categoryName = document.getElementById('categoryName').value.trim();
+      const packageFile = document.getElementById('importPackageFile').files[0];
+
+      if (!categoryName) {
+        alert("Please specify a Target Category Name first.");
+        return;
+      }
+      if (!packageFile) {
+        alert("Please select a .ptunes or .zip file to import.");
         return;
       }
 
-      if (mode === 'apply') {
-        const { error } = await supabaseClient.from('creator_accounts').insert([{
-          email: email,
-          profile_name: name,
-          passcode: pass,
-          is_verified: false
-        }]);
+      const importBtn = document.getElementById('importBtn');
+      importBtn.innerText = "Extracting & Uploading Package...";
+      importBtn.disabled = true;
 
-        if (!error) {
-          alert("Application submitted! The platform owner will review and verify your account shortly.");
-          closeModal('authModal');
-        } else {
-          alert("Error applying: " + error.message);
+      try {
+        const zip = await JSZip.loadAsync(packageFile);
+        const manifestFile = zip.file("manifest.json");
+
+        if (!manifestFile) {
+          alert("Invalid package format: Missing manifest.json file.");
+          return;
         }
-      } else {
-        const { data, error } = await supabaseClient.from('creator_accounts').select('*').eq('email', email).eq('passcode', pass).single();
-        if (data) {
-          activeUser = data;
-          localStorage.setItem('ptunes_user', JSON.stringify(data));
-          if (data.is_admin) document.getElementById('adminPanel').style.display = 'block';
-          alert(`Welcome back ${data.profile_name}! Verified status: ${data.is_verified}`);
-          closeModal('authModal');
-          if (data.is_admin) loadPendingUsers();
-        } else {
-          alert("Invalid credentials or account not found.");
+
+        const manifestText = await manifestFile.async("text");
+        const manifest = JSON.parse(manifestText);
+
+        if (!manifest.songs || manifest.songs.length === 0) {
+          alert("No songs found inside this package.");
+          return;
         }
+
+        for (const song of manifest.songs) {
+          const audioZipEntry = zip.file(`audio/${song.audio}`) || zip.file(song.audio);
+          if (!audioZipEntry) continue;
+
+          const audioBlob = await audioZipEntry.async("blob");
+          const audioFileName = `${crypto.randomUUID()}.mp3`;
+          await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioBlob);
+          const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
+
+          let artUrl = null;
+          if (song.art) {
+            const artZipEntry = zip.file(`art/${song.art}`) || zip.file(song.art);
+            if (artZipEntry) {
+              const artBlob = await artZipEntry.async("blob");
+              const artFileName = `${crypto.randomUUID()}.img`;
+              await supabaseClient.storage.from('ptunes-files').upload(artFileName, artBlob);
+              artUrl = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName).data.publicUrl;
+            }
+          }
+
+          await supabaseClient.from('audio_tracks').insert([{
+            category_name: categoryName,
+            title: song.title || "Untitled",
+            artist_name: song.artist || activeUser.profile_name,
+            uploader_name: activeUser.profile_name,
+            audio_url: audioUrlData.publicUrl,
+            art_url: artUrl,
+            lyrics: song.lyrics || null,
+            icon_key: manifest.icon || "cassette"
+          }]);
+        }
+
+        alert(`Successfully imported tracks into "${categoryName}"!`);
+        closeModal('uploadModal');
+        loadCategories();
+
+      } catch (err) {
+        alert("Import Error: " + err.message);
+      } finally {
+        importBtn.innerText = "Import Package Content";
+        importBtn.disabled = false;
       }
     }
 
-    // 4. Track Upload (Verified Users Only)
+    // 4. Single Track Upload
     async function handleUpload() {
-      if (!activeUser || !activeUser.is_verified) {
-        alert("Unauthorized.");
-        return;
-      }
+      if (!activeUser || !activeUser.is_verified) return;
 
       const categoryName = document.getElementById('categoryName').value.trim();
       const title = document.getElementById('songTitle').value.trim();
@@ -384,7 +461,7 @@
       const artInput = document.getElementById('artFile').files[0];
 
       if (!categoryName || !title || !artistName || !audioInput) {
-        alert("Please fill in all required fields.");
+        alert("Please fill in all required fields (Category, Title, Artist, and MP3).");
         return;
       }
 
@@ -425,12 +502,48 @@
       } catch (err) {
         alert("Error: " + err.message);
       } finally {
-        uploadBtn.innerText = "Publish Audio";
+        uploadBtn.innerText = "Publish Audio Track";
         uploadBtn.disabled = false;
       }
     }
 
-    // Owner Verification Panel
+    // Auth & Admin Functions
+    async function handleAuthSubmit(mode) {
+      const email = document.getElementById('authEmail').value.trim();
+      const name = document.getElementById('authProfileName').value.trim();
+      const pass = document.getElementById('authPassword').value.trim();
+
+      if (!email || !name || !pass) {
+        alert("Please fill in all account fields.");
+        return;
+      }
+
+      if (mode === 'apply') {
+        const { error } = await supabaseClient.from('creator_accounts').insert([{
+          email: email, profile_name: name, passcode: pass, is_verified: false
+        }]);
+
+        if (!error) {
+          alert("Application submitted! The platform owner will review and verify your account shortly.");
+          closeModal('authModal');
+        } else {
+          alert("Error applying: " + error.message);
+        }
+      } else {
+        const { data } = await supabaseClient.from('creator_accounts').select('*').eq('email', email).eq('passcode', pass).single();
+        if (data) {
+          activeUser = data;
+          localStorage.setItem('ptunes_user', JSON.stringify(data));
+          if (data.is_admin) document.getElementById('adminPanel').style.display = 'block';
+          alert(`Welcome back ${data.profile_name}! Verified status: ${data.is_verified}`);
+          closeModal('authModal');
+          if (data.is_admin) loadPendingUsers();
+        } else {
+          alert("Invalid credentials or account not found.");
+        }
+      }
+    }
+
     async function loadPendingUsers() {
       const { data: users } = await supabaseClient.from('creator_accounts').select('*').eq('is_verified', false);
       const container = document.getElementById('pendingUsersList');
@@ -455,7 +568,6 @@
       loadPendingUsers();
     }
 
-    // Auto-check session on startup
     if (activeUser && activeUser.is_admin) {
       document.getElementById('adminPanel').style.display = 'block';
       loadPendingUsers();
