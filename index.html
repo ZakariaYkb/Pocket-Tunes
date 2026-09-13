@@ -58,6 +58,9 @@
     .btn-danger:hover { background: #a40e26; }
     .btn-icon { padding: 6px 10px; background: transparent; color: #57606a; border: 1px solid #d0d7de; }
     .btn-icon:hover { background: #f3f4f6; color: #1f2328; }
+    .btn-play { background: #0366d6; color: white; border-radius: 50%; width: 34px; height: 34px; padding: 0; flex-shrink: 0; }
+    .btn-play:hover { background: #0256b9; }
+    .btn-play.playing { background: #cf222e; }
     .btn-sm { padding: 6px 12px; font-size: 0.85em; }
 
     .header-action { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -95,7 +98,7 @@
     
     /* Collapsible Track List */
     .audio-list { max-height: 0; overflow: hidden; transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out; padding: 0 18px; }
-    .audio-list.expanded { max-height: 3000px; padding: 14px 18px; }
+    .audio-list.expanded { max-height: 5000px; padding: 14px 18px; }
     
     /* Clean Row Track Layout & Highlight Selection */
     .audio-item { 
@@ -216,7 +219,7 @@
     <div class="header-action">
       <div>
         <h2 style="margin:0;">Community Categories</h2>
-        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click a category to expand, click tracks to select, or download.</p>
+        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click play to preview audio, click tracks to select, or download.</p>
       </div>
       <div class="header-buttons">
         <button onclick="openModal('authModal')" class="btn btn-outline" id="authBtn">Creator Sign In / Apply</button>
@@ -231,7 +234,7 @@
         id="searchInput" 
         class="search-input" 
         oninput="handleSearch()" 
-        placeholder="🔍 Search tracks or artists (e.g. 'cool artist', 'cool song')..."
+        placeholder="🔍 Search tracks or artists (e.g. 'chicken man', 'cool')..."
       >
     </div>
 
@@ -375,7 +378,15 @@
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let activeUser = JSON.parse(localStorage.getItem('ptunes_user')) || null;
-    let allTracks = []; // Master track array stored locally for fast instant search
+    
+    // Performance Optimization: Global Data & Map Lookup (Zero DOM JSON Bloat)
+    let allTracks = []; 
+    const trackMap = new Map();
+    let searchDebounceTimer = null;
+
+    // Singleton Lazy Audio Player
+    let currentAudioPlayer = null;
+    let currentPlayingTrackId = null;
 
     // Close open dropdowns when clicking anywhere outside
     document.addEventListener('click', function(event) {
@@ -448,22 +459,28 @@
       }
 
       allTracks = songs;
+      trackMap.clear();
+      songs.forEach(track => trackMap.set(track.id, track));
+
       const currentQuery = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
       renderCategories(currentQuery);
     }
 
-    // Handle Instant Search Typing
+    // Handle Instant Search Typing with Debounce (150ms) to Prevent UI Lag
     function handleSearch() {
-      const query = document.getElementById('searchInput').value;
-      renderCategories(query);
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        const query = document.getElementById('searchInput').value;
+        renderCategories(query);
+      }, 150);
     }
 
-    // Render Categories & Filter Tracks Real-Time
+    // High Performance Render Function
     function renderCategories(query = '') {
       const container = document.getElementById('categoriesContainer');
       const cleanQuery = query.toLowerCase().trim();
 
-      // Filter tracks by title OR artist name
+      // Fast Array Filtering
       const filteredSongs = allTracks.filter(song => {
         if (!cleanQuery) return true;
         const titleMatch = song.title && song.title.toLowerCase().includes(cleanQuery);
@@ -494,15 +511,16 @@
       container.innerHTML = '';
       const isSearching = cleanQuery.length > 0;
 
-      // Render Categories & Tracks
+      // Efficient DOM String Construction
       Object.keys(categories).forEach(catName => {
         const catData = categories[catName];
         const catClass = catName.replace(/\s+/g, '_');
         let tracksHTML = '';
 
         catData.tracks.forEach(track => {
+          // Lazy Loading Image Strategy
           const coverHTML = track.art_url 
-            ? `<img src="${track.art_url}" class="audio-cover-art" alt="Cover Art">`
+            ? `<img src="${track.art_url}" loading="lazy" class="audio-cover-art" alt="Cover Art">`
             : `<div class="audio-cover-placeholder">🎵</div>`;
 
           const canManage = activeUser && (activeUser.profile_name === track.uploader_name || activeUser.is_admin);
@@ -515,10 +533,10 @@
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
                 </button>
                 <div class="dropdown-menu" id="dropdown-${track.id}">
-                  <button onclick='openEditModal(${JSON.stringify(track).replace(/'/g, "&apos;")}, event)' class="dropdown-item">
+                  <button onclick="openEditModal(${track.id}, event)" class="dropdown-item">
                     ✏️ Edit Track
                   </button>
-                  <button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}', event)" class="dropdown-item danger">
+                  <button onclick="deleteTrack(${track.id}, event)" class="dropdown-item danger">
                     🗑️ Delete Track
                   </button>
                 </div>
@@ -526,17 +544,25 @@
             `;
           }
 
+          const isPlaying = currentPlayingTrackId === track.id;
+          const playIconSvg = isPlaying 
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+
           tracksHTML += `
-            <div class="audio-item" data-song='${JSON.stringify(track).replace(/'/g, "&apos;")}' onclick="toggleTrackSelection(this, '${catClass}', event)">
+            <div class="audio-item" data-id="${track.id}" onclick="toggleTrackSelection(this, '${catClass}', event)">
               <div class="audio-left">
+                <button id="play-btn-${track.id}" onclick="toggleAudioPreview(${track.id}, event)" class="btn btn-play ${isPlaying ? 'playing' : ''}" title="Preview Audio">
+                  ${playIconSvg}
+                </button>
                 ${coverHTML}
                 <div class="audio-info">
-                  <span class="audio-title" title="${track.title}">${escapeHtml(track.title)}</span>
-                  <span class="audio-artist" title="${track.artist_name}">${escapeHtml(track.artist_name)}</span>
+                  <span class="audio-title" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
+                  <span class="audio-artist" title="${escapeHtml(track.artist_name)}">${escapeHtml(track.artist_name)}</span>
                 </div>
               </div>
               <div class="audio-actions">
-                <button onclick='downloadSingleTrack(${JSON.stringify(track).replace(/'/g, "&apos;")})' class="btn btn-secondary btn-sm btn-outline download-btn" title="Download (.ptunes)">
+                <button onclick="downloadSingleTrack(${track.id})" class="btn btn-secondary btn-sm btn-outline download-btn" title="Download (.ptunes)">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   <span class="btn-text">Download (.ptunes)</span>
                 </button>
@@ -546,7 +572,6 @@
           `;
         });
 
-        // Automatically expand category when user is actively searching so matching tracks are immediately shown
         const expandedClass = isSearching ? ' expanded' : '';
 
         container.innerHTML += `
@@ -569,10 +594,77 @@
       });
     }
 
-    // Open Edit Modal with Pre-filled Data
-    function openEditModal(track, event) {
+    // Optimized Lazy Audio Preview Controller
+    function toggleAudioPreview(trackId, event) {
+      if (event) event.stopPropagation();
+
+      const track = trackMap.get(trackId);
+      if (!track || !track.audio_url) {
+        alert("Audio file URL not available.");
+        return;
+      }
+
+      // 1. If clicking the currently playing track -> Pause it
+      if (currentPlayingTrackId === trackId && currentAudioPlayer) {
+        currentAudioPlayer.pause();
+        return;
+      }
+
+      // 2. Stop any existing playing audio
+      if (currentAudioPlayer) {
+        currentAudioPlayer.pause();
+      }
+
+      // 3. Reset previously playing button icon
+      if (currentPlayingTrackId) {
+        updatePlayBtnIcon(currentPlayingTrackId, false);
+      }
+
+      // 4. Initialize lazy player on-demand
+      currentPlayingTrackId = trackId;
+      currentAudioPlayer = new Audio(track.audio_url);
+      updatePlayBtnIcon(trackId, true);
+
+      currentAudioPlayer.play().catch(err => {
+        console.error("Audio playback error:", err);
+        updatePlayBtnIcon(trackId, false);
+        currentPlayingTrackId = null;
+      });
+
+      // Handle natural track completion
+      currentAudioPlayer.onended = () => {
+        updatePlayBtnIcon(trackId, false);
+        currentPlayingTrackId = null;
+        currentAudioPlayer = null;
+      };
+
+      currentAudioPlayer.onpause = () => {
+        updatePlayBtnIcon(trackId, false);
+        currentPlayingTrackId = null;
+        currentAudioPlayer = null;
+      };
+    }
+
+    function updatePlayBtnIcon(trackId, isPlaying) {
+      const btn = document.getElementById(`play-btn-${trackId}`);
+      if (!btn) return;
+
+      if (isPlaying) {
+        btn.classList.add('playing');
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+      } else {
+        btn.classList.remove('playing');
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      }
+    }
+
+    // Open Edit Modal via Map Lookup
+    function openEditModal(trackId, event) {
       if (event) event.stopPropagation();
       document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
+
+      const track = trackMap.get(trackId);
+      if (!track) return;
 
       document.getElementById('editTrackId').value = track.id;
       document.getElementById('editCategoryName').value = track.category_name;
@@ -648,22 +740,25 @@
       }
     }
 
-    // Delete Single Track Function
-    async function deleteTrack(trackId, trackTitle, event) {
+    // Delete Single Track Function via Map Lookup
+    async function deleteTrack(trackId, event) {
       if (event) event.stopPropagation();
       document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
+
+      const track = trackMap.get(trackId);
+      if (!track) return;
 
       if (!activeUser) {
         alert("Please sign in to delete tracks.");
         return;
       }
 
-      if (!confirm(`Are you sure you want to delete "${trackTitle}"?`)) return;
+      if (!confirm(`Are you sure you want to delete "${track.title}"?`)) return;
 
       const { error } = await supabaseClient.from('audio_tracks').delete().eq('id', trackId);
 
       if (!error) {
-        alert(`"${trackTitle}" deleted successfully!`);
+        alert(`"${track.title}" deleted successfully!`);
         loadCategories();
       } else {
         alert("Failed to delete track: " + error.message);
@@ -713,7 +808,10 @@
       const manifestSongs = [];
 
       for (let i = 0; i < selectedItems.length; i++) {
-        const song = JSON.parse(selectedItems[i].getAttribute('data-song'));
+        const trackId = parseInt(selectedItems[i].getAttribute('data-id'));
+        const song = trackMap.get(trackId);
+        if (!song) continue;
+
         const audioFileName = `${crypto.randomUUID()}.mp3`;
 
         const audioBlob = await fetch(song.audio_url).then(r => r.blob());
@@ -753,7 +851,10 @@
       a.click();
     }
 
-    async function downloadSingleTrack(song) {
+    async function downloadSingleTrack(trackId) {
+      const song = trackMap.get(trackId);
+      if (!song) return;
+
       const zip = new JSZip();
       const audioFileName = `${crypto.randomUUID()}.mp3`;
       const audioBlob = await fetch(song.audio_url).then(r => r.blob());
@@ -808,7 +909,7 @@
         return;
       }
 
-      // 🔍 DUPLICATE CHECK
+      // DUPLICATE CHECK
       const { data: existingTracks } = await supabaseClient
         .from('audio_tracks')
         .select('id')
@@ -908,7 +1009,6 @@
           const songTitle = song.title || "Untitled";
           const songArtist = song.artist || activeUser.profile_name;
 
-          // 🔍 DUPLICATE CHECK: Query database for existing track with same Title & Artist in this Category
           const { data: existingTracks } = await supabaseClient
             .from('audio_tracks')
             .select('id')
@@ -1081,7 +1181,7 @@
       }
     }
 
-    // Initialize
+    // Initialize Application
     updateAuthButtonState();
     loadCategories();
     if (activeUser && activeUser.is_admin) {
