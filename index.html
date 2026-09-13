@@ -479,7 +479,7 @@
     }
 
     function toggleCategoryCollapse(catClass, event) {
-      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.tagName === 'INPUT' || event.target.closest('button') || event.target.closest('.dropdown-menu') || event.target.closest('.audio-player-drawer')) return;
+      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.closest('button') || event.target.closest('.dropdown-menu') || event.target.closest('.audio-player-drawer')) return;
       
       const listElement = document.getElementById(`audio-list-${catClass}`);
       if (listElement) {
@@ -750,7 +750,7 @@
       if (currTimeEl) currTimeEl.innerText = "0:00";
     }
 
-    function togglePlayBtnIcon(trackId, isPlaying) {
+    function updatePlayBtnIcon(trackId, isPlaying) {
       const btn = document.getElementById(`play-btn-${trackId}`);
       if (!btn) return;
 
