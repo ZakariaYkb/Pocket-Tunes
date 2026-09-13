@@ -76,15 +76,35 @@
     .audio-list { max-height: 0; overflow: hidden; transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out; padding: 0 18px; }
     .audio-list.expanded { max-height: 3000px; padding: 14px 18px; }
     
-    /* Track Layout & Cover Art Styling */
-    .audio-item { display: flex; justify-content: space-between; align-items: center; background: #fafbfc; padding: 10px 14px; border: 1px solid #eaecef; border-radius: 8px; margin-bottom: 8px; gap: 12px; }
+    /* Clean Row Track Layout & Highlight Selection */
+    .audio-item { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      background: #fafbfc; 
+      padding: 10px 14px; 
+      border: 1px solid #eaecef; 
+      border-radius: 8px; 
+      margin-bottom: 8px; 
+      gap: 12px; 
+      cursor: pointer; 
+      user-select: none; 
+      transition: background 0.15s ease, border-color 0.15s ease; 
+    }
+    .audio-item:hover { background: #f3f4f6; }
+    .audio-item.selected { 
+      background: #e6f4ea; 
+      border-color: #2da44e; 
+    }
+
     .audio-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-    .audio-cover-art { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid #e1e4e8; background: #fff; }
-    .audio-cover-placeholder { width: 44px; height: 44px; border-radius: 6px; background: #eaecef; display: flex; align-items: center; justify-content: center; font-size: 1.2em; flex-shrink: 0; color: #57606a; border: 1px solid #e1e4e8; }
-    .audio-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; overflow: hidden; }
-    .audio-title { font-weight: 600; color: #24292e; font-size: 0.95em; word-break: break-word; }
-    .audio-artist { font-size: 0.82em; color: #57606a; background: #eaecef; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
-    .audio-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .audio-cover-art { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid #e1e4e8; background: #fff; }
+    .audio-cover-placeholder { width: 52px; height: 52px; border-radius: 8px; background: #eaecef; display: flex; align-items: center; justify-content: center; font-size: 1.5em; flex-shrink: 0; color: #57606a; border: 1px solid #e1e4e8; }
+    
+    .audio-info { display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; min-width: 0; }
+    .audio-title { font-weight: 600; color: #1f2328; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .audio-artist { font-size: 0.82em; color: #57606a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .audio-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 
     /* Modals */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
@@ -110,10 +130,10 @@
       .category-actions { width: 100%; justify-content: space-between; }
       .category-actions .btn { flex: 1; text-align: center; }
 
-      .audio-item { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
-      .audio-left { width: 100%; }
-      .audio-actions { width: 100%; }
-      .audio-actions .btn { flex: 1; text-align: center; }
+      .audio-item { padding: 10px; gap: 8px; }
+      .audio-cover-art, .audio-cover-placeholder { width: 44px; height: 44px; font-size: 1.2em; }
+      .audio-actions { gap: 4px; }
+      .audio-actions .btn { padding: 6px 8px; font-size: 0.78em; }
 
       .modal-content { padding: 18px; }
     }
@@ -137,7 +157,7 @@
     <div class="header-action">
       <div>
         <h2 style="margin:0;">Community Categories</h2>
-        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click a category to expand songs, select tracks, or download.</p>
+        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click a category to expand, click tracks to select, or download.</p>
       </div>
       <div class="header-buttons">
         <button onclick="openModal('authModal')" class="btn btn-outline" id="authBtn">Creator Sign In / Apply</button>
@@ -273,6 +293,13 @@
       }
     }
 
+    // Track Selection Toggle
+    function toggleTrackSelection(element, catClass, event) {
+      if (event.target.closest('button')) return;
+      element.classList.toggle('selected');
+      updateToggleBtnState(catClass);
+    }
+
     // 1. Load Categories and Tracks
     async function loadCategories() {
       const container = document.getElementById('categoriesContainer');
@@ -300,29 +327,26 @@
         let tracksHTML = '';
 
         catData.tracks.forEach(track => {
-          // Render cover image thumbnail or fallback musical icon
           const coverHTML = track.art_url 
             ? `<img src="${track.art_url}" class="audio-cover-art" alt="Cover Art">`
             : `<div class="audio-cover-placeholder">🎵</div>`;
 
-          // Show delete button if active user is track uploader or admin
           const canDelete = activeUser && (activeUser.profile_name === track.uploader_name || activeUser.is_admin);
           const deleteBtnHTML = canDelete 
             ? `<button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}')" class="btn btn-danger btn-sm">Delete</button>` 
             : '';
 
           tracksHTML += `
-            <div class="audio-item">
+            <div class="audio-item" data-song='${JSON.stringify(track).replace(/'/g, "&apos;")}' onclick="toggleTrackSelection(this, '${catClass}', event)">
               <div class="audio-left">
-                <input type="checkbox" class="track-checkbox-${catClass}" data-song='${JSON.stringify(track)}' onchange="updateToggleBtnState('${catClass}')">
                 ${coverHTML}
                 <div class="audio-info">
-                  <span class="audio-title">${track.title}</span>
-                  <span class="audio-artist">${track.artist_name}</span>
+                  <span class="audio-title" title="${track.title}">${track.title}</span>
+                  <span class="audio-artist" title="${track.artist_name}">${track.artist_name}</span>
                 </div>
               </div>
               <div class="audio-actions">
-                <button onclick='downloadSingleTrack(${JSON.stringify(track)})' class="btn btn-secondary btn-sm btn-outline">Download (.ptunes)</button>
+                <button onclick='downloadSingleTrack(${JSON.stringify(track).replace(/'/g, "&apos;")})' class="btn btn-secondary btn-sm btn-outline">Download (.ptunes)</button>
                 ${deleteBtnHTML}
               </div>
             </div>
@@ -370,40 +394,48 @@
 
     // Toggle Select All / Deselect All
     function toggleCategorySelect(catClass) {
-      const checkboxes = document.querySelectorAll(`.track-checkbox-${catClass}`);
+      const trackItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item`);
       const btn = document.getElementById(`toggle-btn-${catClass}`);
-      
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-      const newState = !allChecked;
+      if (!trackItems.length) return;
 
-      checkboxes.forEach(cb => cb.checked = newState);
+      const allSelected = Array.from(trackItems).every(item => item.classList.contains('selected'));
+      const newState = !allSelected;
+
+      trackItems.forEach(item => {
+        if (newState) {
+          item.classList.add('selected');
+        } else {
+          item.classList.remove('selected');
+        }
+      });
+
       btn.innerText = newState ? 'Deselect All' : 'Select All';
     }
 
-    // Dynamically update button label if individual checkboxes are clicked manually
     function updateToggleBtnState(catClass) {
-      const checkboxes = document.querySelectorAll(`.track-checkbox-${catClass}`);
+      const trackItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item`);
       const btn = document.getElementById(`toggle-btn-${catClass}`);
-      
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-      btn.innerText = allChecked ? 'Deselect All' : 'Select All';
+      if (!trackItems.length || !btn) return;
+
+      const allSelected = Array.from(trackItems).every(item => item.classList.contains('selected'));
+      btn.innerText = allSelected ? 'Deselect All' : 'Select All';
     }
 
     // 2. Download Selected Tracks as 1 Combined .ptunes Package
     async function downloadSelectedPackage(catName) {
       const catClass = catName.replace(/\s+/g, '_');
-      const selectedBoxes = document.querySelectorAll(`.track-checkbox-${catClass}:checked`);
+      const selectedItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item.selected`);
       
-      if (selectedBoxes.length === 0) {
-        alert("Please select at least one audio track to download.");
+      if (selectedItems.length === 0) {
+        alert("Please select at least one audio track by clicking on it.");
         return;
       }
 
       const zip = new JSZip();
       const manifestSongs = [];
 
-      for (let i = 0; i < selectedBoxes.length; i++) {
-        const song = JSON.parse(selectedBoxes[i].getAttribute('data-song'));
+      for (let i = 0; i < selectedItems.length; i++) {
+        const song = JSON.parse(selectedItems[i].getAttribute('data-song'));
         const audioFileName = `${crypto.randomUUID()}.mp3`;
 
         const audioBlob = await fetch(song.audio_url).then(r => r.blob());
@@ -480,7 +512,7 @@
       a.click();
     }
 
-    // 3. Import Full .ptunes / Zip Package into Selected Category
+    // 3. Import Full .ptunes / Zip Package
     async function handlePackageImport() {
       if (!activeUser || !activeUser.is_verified) return;
 
