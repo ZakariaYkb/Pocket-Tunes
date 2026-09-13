@@ -11,49 +11,115 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #24292e; background: #f6f8fa; }
-    .card { background: #fff; padding: 25px; border-radius: 12px; border: 1px solid #e1e4e8; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    .btn { display: inline-block; background: #2da44e; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; border: none; cursor: pointer; }
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+      max-width: 900px; 
+      margin: 30px auto; 
+      padding: 0 16px; 
+      line-height: 1.5; 
+      color: #24292e; 
+      background: #f6f8fa; 
+    }
+    
+    .card { 
+      background: #fff; 
+      padding: 24px; 
+      border-radius: 12px; 
+      border: 1px solid #e1e4e8; 
+      margin-bottom: 20px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04); 
+    }
+    
+    .btn { 
+      display: inline-flex; 
+      align-items: center; 
+      justify-content: center; 
+      background: #2da44e; 
+      color: white; 
+      padding: 8px 16px; 
+      border-radius: 6px; 
+      text-decoration: none; 
+      font-weight: 600; 
+      font-size: 0.9em; 
+      border: none; 
+      cursor: pointer; 
+      transition: background 0.15s ease; 
+      white-space: nowrap; 
+    }
+    .btn:hover { background: #2c974b; }
     .btn-secondary { background: #0366d6; }
+    .btn-secondary:hover { background: #0256b9; }
     .btn-outline { background: transparent; color: #0366d6; border: 1px solid #0366d6; }
+    .btn-outline:hover { background: rgba(3, 102, 214, 0.08); }
     .btn-sm { padding: 6px 12px; font-size: 0.85em; }
-    .header-action { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+
+    .header-action { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+    .header-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
     .disclaimer-banner { background: #e8f5e9; border: 1px solid #81c784; padding: 12px 16px; border-radius: 8px; font-size: 0.9em; margin-bottom: 20px; color: #1b5e20; }
-    .verified-badge { color: #1da1f2; font-weight: bold; margin-left: 5px; }
+    .verified-badge { color: #1da1f2; font-weight: bold; margin-left: 4px; }
     
-    /* Collapsible Category Styling */
-    .category-group { border: 1px solid #e1e4e8; border-radius: 8px; margin-bottom: 20px; background: #fff; overflow: hidden; }
-    .category-header { background: #f1f3f5; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e8; cursor: pointer; user-select: none; }
+    /* Category Layout */
+    .category-group { border: 1px solid #e1e4e8; border-radius: 8px; margin-bottom: 16px; background: #fff; overflow: hidden; }
+    .category-header { background: #f6f8fa; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e8; cursor: pointer; user-select: none; gap: 12px; transition: background 0.15s; }
     .category-header:hover { background: #eaecef; }
-    .category-title { font-size: 1.2em; font-weight: bold; }
-    .category-actions { display: flex; gap: 10px; align-items: center; }
+    .category-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .category-title { font-size: 1.1em; font-weight: 700; color: #1f2328; }
+    .category-meta { font-size: 0.85em; color: #57606a; }
+    .category-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     
-    .audio-list { max-height: 0; overflow: hidden; transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out; padding: 0 20px; }
-    .audio-list.expanded { max-height: 2000px; padding: 15px 20px; }
+    /* Collapsible Track List */
+    .audio-list { max-height: 0; overflow: hidden; transition: max-height 0.35s ease-in-out, padding 0.35s ease-in-out; padding: 0 18px; }
+    .audio-list.expanded { max-height: 3000px; padding: 14px 18px; }
     
-    .audio-item { display: flex; justify-content: space-between; align-items: center; background: #fafbfc; padding: 12px 16px; border: 1px solid #eaecef; border-radius: 6px; margin-bottom: 10px; }
-    .audio-left { display: flex; align-items: center; gap: 12px; }
-    .audio-meta { font-size: 0.85em; color: #57606a; }
+    /* Track Layout & Cover Art Styling */
+    .audio-item { display: flex; justify-content: space-between; align-items: center; background: #fafbfc; padding: 10px 14px; border: 1px solid #eaecef; border-radius: 8px; margin-bottom: 8px; gap: 12px; }
+    .audio-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .audio-cover-art { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid #e1e4e8; background: #fff; }
+    .audio-cover-placeholder { width: 44px; height: 44px; border-radius: 6px; background: #eaecef; display: flex; align-items: center; justify-content: center; font-size: 1.2em; flex-shrink: 0; color: #57606a; border: 1px solid #e1e4e8; }
+    .audio-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; overflow: hidden; }
+    .audio-title { font-weight: 600; color: #24292e; font-size: 0.95em; word-break: break-word; }
+    .audio-artist { font-size: 0.82em; color: #57606a; background: #eaecef; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
 
     /* Modals */
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
-    .modal-content { background: #fff; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
+    .modal-content { background: #fff; padding: 24px; border-radius: 12px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
     .close-btn { background: none; border: none; font-size: 1.5em; cursor: pointer; color: #57606a; }
-    input, select, textarea { width: 100%; padding: 8px; margin: 6px 0 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-    .divider { text-align: center; font-weight: bold; margin: 15px 0; color: #57606a; position: relative; }
-    .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: 42%; height: 1px; background: #e1e4e8; }
+    input, select, textarea { width: 100%; padding: 8px 10px; margin: 6px 0 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95em; }
+    .divider { text-align: center; font-weight: bold; margin: 15px 0; color: #57606a; position: relative; font-size: 0.85em; }
+    .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: 38%; height: 1px; background: #e1e4e8; }
     .divider::before { left: 0; } .divider::after { right: 0; }
-    
     .admin-card { border: 1px solid #cf222e; background: #fff5f5; }
+
+    /* Mobile Responsive Overrides */
+    @media (max-width: 650px) {
+      body { margin: 15px auto; padding: 0 12px; }
+      .card { padding: 16px; margin-bottom: 15px; }
+      
+      .header-action { flex-direction: column; align-items: stretch; gap: 12px; }
+      .header-buttons { flex-direction: column; width: 100%; }
+      .header-buttons .btn { width: 100%; text-align: center; }
+
+      .category-header { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
+      .category-actions { width: 100%; justify-content: space-between; }
+      .category-actions .btn { flex: 1; text-align: center; }
+
+      .audio-item { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+      .audio-left { width: 100%; }
+      .audio-item .btn { width: 100%; text-align: center; }
+
+      .modal-content { padding: 18px; }
+    }
   </style>
 </head>
 <body>
 
   <!-- App Header Section -->
   <div class="card">
-    <h1>Pocket Tunes</h1>
-    <p>A lightweight, offline mobile music player that puts you in full control of your audio library.</p>
+    <h1 style="margin-top:0; margin-bottom:8px;">Pocket Tunes</h1>
+    <p style="margin-top:0;">A lightweight, offline mobile music player that puts you in full control of your audio library.</p>
     <a href="https://github.com/ZakariaYkb/Pocket-Tunes/releases/download/v1.0.0/app-release.apk" class="btn">Download App (.APK)</a>
   </div>
 
@@ -65,10 +131,10 @@
   <div class="card">
     <div class="header-action">
       <div>
-        <h2>Community Categories</h2>
-        <p style="margin:0; color:#57606a; font-size: 0.9em;">Click a category to expand songs, select tracks, or download.</p>
+        <h2 style="margin:0;">Community Categories</h2>
+        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click a category to expand songs, select tracks, or download.</p>
       </div>
-      <div>
+      <div class="header-buttons">
         <button onclick="openModal('authModal')" class="btn btn-outline">Creator Sign In / Apply</button>
         <button onclick="openUploadModal()" class="btn">+ Add Audio</button>
       </div>
@@ -220,13 +286,19 @@
         let tracksHTML = '';
 
         catData.tracks.forEach(track => {
+          // Render cover image thumbnail or fallback musical icon
+          const coverHTML = track.art_url 
+            ? `<img src="${track.art_url}" class="audio-cover-art" alt="Cover Art">`
+            : `<div class="audio-cover-placeholder">🎵</div>`;
+
           tracksHTML += `
             <div class="audio-item">
               <div class="audio-left">
                 <input type="checkbox" class="track-checkbox-${catClass}" data-song='${JSON.stringify(track)}' onchange="updateToggleBtnState('${catClass}')">
-                <div>
-                  <strong>${track.title}</strong>
-                  <div class="audio-meta">Artist: ${track.artist_name}</div>
+                ${coverHTML}
+                <div class="audio-info">
+                  <span class="audio-title">${track.title}</span>
+                  <span class="audio-artist">${track.artist_name}</span>
                 </div>
               </div>
               <button onclick='downloadSingleTrack(${JSON.stringify(track)})' class="btn btn-secondary btn-sm btn-outline">Download (.ptunes)</button>
@@ -237,9 +309,9 @@
         container.innerHTML += `
           <div class="category-group">
             <div class="category-header" onclick="toggleCategoryCollapse('${catClass}', event)">
-              <div>
+              <div class="category-info">
                 <span class="category-title">▶ ${catName}</span>
-                <span style="color: #57606a; font-size: 0.85em; margin-left:10px;">By: <strong>${catData.creator}</strong> <span class="verified-badge">✔ Verified</span></span>
+                <span class="category-meta">By: <strong>${catData.creator}</strong> <span class="verified-badge">✔ Verified</span></span>
               </div>
               <div class="category-actions">
                 <button id="toggle-btn-${catClass}" onclick="toggleCategorySelect('${catClass}')" class="btn btn-outline btn-sm">Select All</button>
