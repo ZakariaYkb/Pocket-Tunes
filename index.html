@@ -722,10 +722,10 @@
     // 3. Import Full .ptunes / Zip Package
     async function handlePackageImport() {
       if (!activeUser || !activeUser.is_verified) return;
-
+    
       const categoryName = document.getElementById('categoryName').value.trim();
       const packageFile = document.getElementById('importPackageFile').files[0];
-
+    
       if (!categoryName) {
         alert("Please specify a Target Category Name first.");
         return;
@@ -734,37 +734,58 @@
         alert("Please select a .ptunes or .zip file to import.");
         return;
       }
-
+    
       const importBtn = document.getElementById('importBtn');
-      importBtn.innerText = "Extracting & Uploading Package...";
+      importBtn.innerText = "Checking & Extracting Package...";
       importBtn.disabled = true;
-
+    
       try {
         const zip = await JSZip.loadAsync(packageFile);
         const manifestFile = zip.file("manifest.json");
-
+    
         if (!manifestFile) {
           alert("Invalid package format: Missing manifest.json file.");
           return;
         }
-
+    
         const manifestText = await manifestFile.async("text");
         const manifest = JSON.parse(manifestText);
-
+    
         if (!manifest.songs || manifest.songs.length === 0) {
           alert("No songs found inside this package.");
           return;
         }
-
+    
+        let addedCount = 0;
+        let skippedCount = 0;
+    
         for (const song of manifest.songs) {
+          const songTitle = song.title || "Untitled";
+          const songArtist = song.artist || activeUser.profile_name;
+    
+          // 🔍 DUPLICATE CHECK: Query database for existing track with same Title & Artist in this Category
+          const { data: existingTracks } = await supabaseClient
+            .from('audio_tracks')
+            .select('id')
+            .eq('category_name', categoryName)
+            .eq('title', songTitle)
+            .eq('artist_name', songArtist);
+    
+          if (existingTracks && existingTracks.length > 0) {
+            // Track already exists! Skip uploading files & inserting duplicate row
+            skippedCount++;
+            continue;
+          }
+    
+          // Track does NOT exist -> Proceed with storage upload and database insertion
           const audioZipEntry = zip.file(`audio/${song.audio}`) || zip.file(song.audio);
           if (!audioZipEntry) continue;
-
+    
           const audioBlob = await audioZipEntry.async("blob");
           const audioFileName = `${crypto.randomUUID()}.mp3`;
           await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioBlob);
           const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
-
+    
           let artUrl = null;
           if (song.art) {
             const artZipEntry = zip.file(`art/${song.art}`) || zip.file(song.art);
@@ -775,18 +796,32 @@
               artUrl = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName).data.publicUrl;
             }
           }
-
+    
           await supabaseClient.from('audio_tracks').insert([{
             category_name: categoryName,
-            title: song.title || "Untitled",
-            artist_name: song.artist || activeUser.profile_name,
+            title: songTitle,
+            artist_name: songArtist,
             uploader_name: activeUser.profile_name,
             audio_url: audioUrlData.publicUrl,
             art_url: artUrl,
             lyrics: song.lyrics || null,
             icon_key: manifest.icon || "cassette"
           }]);
+    
+          addedCount++;
         }
+    
+        alert(`Import Summary:\n• Added: ${addedCount} new track(s)\n• Skipped (Duplicates): ${skippedCount} track(s)`);
+        closeModal('uploadModal');
+        loadCategories();
+    
+      } catch (err) {
+        alert("Import Error: " + err.message);
+      } finally {
+        importBtn.innerText = "Import Package Content";
+        importBtn.disabled = false;
+      }
+    }
 
         alert(`Successfully imported tracks into "${categoryName}"!`);
         closeModal('uploadModal');
