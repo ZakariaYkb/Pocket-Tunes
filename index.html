@@ -63,6 +63,24 @@
     .header-action { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
     .header-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 
+    /* Search Bar Styling */
+    .search-container { margin-bottom: 20px; }
+    .search-input { 
+      width: 100%; 
+      padding: 10px 14px; 
+      font-size: 0.95em; 
+      border: 1px solid #d0d7de; 
+      border-radius: 8px; 
+      background: #fff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      margin: 0;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: #0366d6;
+      box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.15);
+    }
+
     .disclaimer-banner { background: #e8f5e9; border: 1px solid #81c784; padding: 12px 16px; border-radius: 8px; font-size: 0.9em; margin-bottom: 20px; color: #1b5e20; }
     .verified-badge { color: #1da1f2; font-weight: bold; margin-left: 4px; }
     
@@ -172,7 +190,6 @@
       .audio-cover-art, .audio-cover-placeholder { width: 46px; height: 46px; font-size: 1.3em; }
       .audio-actions { gap: 6px; }
 
-      /* Mobile Download Icon Only Optimization */
       .download-btn .btn-text { display: none; }
       .download-btn { padding: 8px 10px; border-radius: 6px; }
       .download-btn svg { width: 18px; height: 18px; }
@@ -205,6 +222,17 @@
         <button onclick="openModal('authModal')" class="btn btn-outline" id="authBtn">Creator Sign In / Apply</button>
         <button onclick="openUploadModal()" class="btn">+ Add Audio</button>
       </div>
+    </div>
+
+    <!-- Search Bar Outside Categories -->
+    <div class="search-container">
+      <input 
+        type="text" 
+        id="searchInput" 
+        class="search-input" 
+        oninput="handleSearch()" 
+        placeholder="🔍 Search tracks or artists (e.g. 'chicken man', 'cool')..."
+      >
     </div>
 
     <div id="categoriesContainer">
@@ -347,6 +375,7 @@
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let activeUser = JSON.parse(localStorage.getItem('ptunes_user')) || null;
+    let allTracks = []; // Master track array stored locally for fast instant search
 
     // Close open dropdowns when clicking anywhere outside
     document.addEventListener('click', function(event) {
@@ -354,6 +383,11 @@
         document.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.remove('show'));
       }
     });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
 
     function updateAuthButtonState() {
       const authBtn = document.getElementById('authBtn');
@@ -403,18 +437,53 @@
       if (targetMenu) targetMenu.classList.toggle('show');
     }
 
-    // 1. Load Categories and Tracks
+    // 1. Fetch Categories & Tracks from Supabase
     async function loadCategories() {
       const container = document.getElementById('categoriesContainer');
       const { data: songs, error } = await supabaseClient.from('audio_tracks').select('*').order('id', { ascending: false });
 
-      if (error || !songs || songs.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#57606a;">No categories yet. Verified creators can add tracks to create one!</p>';
+      if (error || !songs) {
+        container.innerHTML = '<p style="text-align:center; color:#cf222e;">Failed to load tracks. Please check connection.</p>';
         return;
       }
 
+      allTracks = songs;
+      const currentQuery = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
+      renderCategories(currentQuery);
+    }
+
+    // Handle Instant Search Typing
+    function handleSearch() {
+      const query = document.getElementById('searchInput').value;
+      renderCategories(query);
+    }
+
+    // Render Categories & Filter Tracks Real-Time
+    function renderCategories(query = '') {
+      const container = document.getElementById('categoriesContainer');
+      const cleanQuery = query.toLowerCase().trim();
+
+      // Filter tracks by title OR artist name
+      const filteredSongs = allTracks.filter(song => {
+        if (!cleanQuery) return true;
+        const titleMatch = song.title && song.title.toLowerCase().includes(cleanQuery);
+        const artistMatch = song.artist_name && song.artist_name.toLowerCase().includes(cleanQuery);
+        return titleMatch || artistMatch;
+      });
+
+      // Handle Empty State
+      if (filteredSongs.length === 0) {
+        if (cleanQuery) {
+          container.innerHTML = `<p style="text-align: center; color: #57606a; padding: 20px 0;">No audio tracks or artists found matching "<strong>${escapeHtml(query)}</strong>".</p>`;
+        } else {
+          container.innerHTML = '<p style="text-align: center; color: #57606a;">No categories yet. Verified creators can add tracks to create one!</p>';
+        }
+        return;
+      }
+
+      // Group matching tracks by Category
       const categories = {};
-      songs.forEach(song => {
+      filteredSongs.forEach(song => {
         const cat = song.category_name;
         if (!categories[cat]) {
           categories[cat] = { creator: song.uploader_name, tracks: [] };
@@ -423,7 +492,9 @@
       });
 
       container.innerHTML = '';
+      const isSearching = cleanQuery.length > 0;
 
+      // Render Categories & Tracks
       Object.keys(categories).forEach(catName => {
         const catData = categories[catName];
         const catClass = catName.replace(/\s+/g, '_');
@@ -460,8 +531,8 @@
               <div class="audio-left">
                 ${coverHTML}
                 <div class="audio-info">
-                  <span class="audio-title" title="${track.title}">${track.title}</span>
-                  <span class="audio-artist" title="${track.artist_name}">${track.artist_name}</span>
+                  <span class="audio-title" title="${track.title}">${escapeHtml(track.title)}</span>
+                  <span class="audio-artist" title="${track.artist_name}">${escapeHtml(track.artist_name)}</span>
                 </div>
               </div>
               <div class="audio-actions">
@@ -475,19 +546,22 @@
           `;
         });
 
+        // Automatically expand category when user is actively searching so matching tracks are immediately shown
+        const expandedClass = isSearching ? ' expanded' : '';
+
         container.innerHTML += `
           <div class="category-group">
             <div class="category-header" onclick="toggleCategoryCollapse('${catClass}', event)">
               <div class="category-info">
-                <span class="category-title">▶ ${catName}</span>
-                <span class="category-meta">By: <strong>${catData.creator}</strong> <span class="verified-badge">✔ Verified</span></span>
+                <span class="category-title">▶ ${escapeHtml(catName)}</span>
+                <span class="category-meta">By: <strong>${escapeHtml(catData.creator)}</strong> <span class="verified-badge">✔ Verified</span> (${catData.tracks.length} track${catData.tracks.length > 1 ? 's' : ''})</span>
               </div>
               <div class="category-actions">
                 <button id="toggle-btn-${catClass}" onclick="toggleCategorySelect('${catClass}')" class="btn btn-outline btn-sm">Select All</button>
                 <button onclick="downloadSelectedPackage('${catName}')" class="btn btn-secondary btn-sm">Download Selected (.ptunes)</button>
               </div>
             </div>
-            <div class="audio-list" id="audio-list-${catClass}">
+            <div class="audio-list${expandedClass}" id="audio-list-${catClass}">
               ${tracksHTML}
             </div>
           </div>
@@ -507,7 +581,6 @@
       document.getElementById('editIconKey').value = track.icon_key || 'cassette';
       document.getElementById('editSongLyrics').value = track.lyrics || '';
       
-      // Reset file inputs
       document.getElementById('editAudioFile').value = '';
       document.getElementById('editArtFile').value = '';
 
@@ -544,7 +617,6 @@
           lyrics: lyrics
         };
 
-        // Replace Audio file if selected
         if (audioInput) {
           const audioFileName = `${crypto.randomUUID()}.mp3`;
           await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioInput);
@@ -552,7 +624,6 @@
           updatePayload.audio_url = audioUrlData.publicUrl;
         }
 
-        // Replace Cover Art image if selected
         if (artInput) {
           const artFileName = `${crypto.randomUUID()}.img`;
           await supabaseClient.storage.from('ptunes-files').upload(artFileName, artInput);
@@ -846,12 +917,10 @@
             .eq('artist_name', songArtist);
 
           if (existingTracks && existingTracks.length > 0) {
-            // Track already exists! Skip uploading files & inserting duplicate row
             skippedCount++;
             continue;
           }
 
-          // Extract & upload audio
           const audioZipEntry = zip.file(`audio/${song.audio}`) || zip.file(song.audio);
           if (!audioZipEntry) continue;
 
@@ -860,7 +929,6 @@
           await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioBlob);
           const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
 
-          // Extract & upload cover art if exists
           let artUrl = null;
           if (song.art) {
             const artZipEntry = zip.file(`art/${song.art}`) || zip.file(song.art);
@@ -872,7 +940,6 @@
             }
           }
 
-          // Insert into database
           await supabaseClient.from('audio_tracks').insert([{
             category_name: categoryName,
             title: songTitle,
@@ -984,7 +1051,7 @@
       pending.forEach(u => {
         html += `
           <li style="margin-bottom: 8px;">
-            <strong>${u.profile_name}</strong> (${u.email})
+            <strong>${escapeHtml(u.profile_name)}</strong> (${escapeHtml(u.email)})
             <button onclick="approveUser(${u.id})" class="btn btn-sm" style="margin-left: 8px;">Approve</button>
             <button onclick="rejectUser(${u.id})" class="btn btn-sm btn-danger" style="margin-left: 4px;">Reject</button>
           </li>
