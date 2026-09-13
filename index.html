@@ -3,87 +3,181 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pocket Tunes - Offline Mobile Music Player</title>
+  <title>Pocket Tunes - Download App & Music Packs</title>
+  
+  <!-- JSZip for creating .ptunes packages -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      max-width: 800px;
-      margin: 40px auto;
-      padding: 0 20px;
-      line-height: 1.6;
-      color: #24292e;
-      background-color: #f6f8fa;
-    }
-    .container {
-      background: #ffffff;
-      padding: 30px;
-      border-radius: 12px;
-      border: 1px solid #e1e4e8;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    }
-    h1, h2 { color: #1b1f23; }
-    .btn {
-      display: inline-block;
-      background-color: #2da44e;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: bold;
-      margin-top: 10px;
-    }
-    .btn:hover { background-color: #2c974b; }
-    .btn-secondary { background-color: #0366d6; }
-    .btn-secondary:hover { background-color: #0256b9; }
-    .disclaimer {
-      background: #fff8c5;
-      border-left: 4px solid #d97706;
-      padding: 15px;
-      margin: 25px 0;
-      border-radius: 0 6px 6px 0;
-      font-size: 0.9em;
-    }
-    ul { list-style-type: none; padding: 0; }
-    li {
-      background: #f6f8fa;
-      border: 1px solid #e1e4e8;
-      padding: 15px;
-      margin-bottom: 12px;
-      border-radius: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #24292e; background: #f6f8fa; }
+    .card { background: #fff; padding: 25px; border-radius: 12px; border: 1px solid #e1e4e8; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .btn { display: inline-block; background: #2da44e; color: white; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; border: none; cursor: pointer; }
+    .btn-secondary { background: #0366d6; }
+    .verified-badge { color: #1da1f2; font-weight: bold; margin-left: 5px; }
+    input, select, textarea { width: 100%; padding: 8px; margin: 6px 0 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    ul { list-style: none; padding: 0; }
+    li { background: #fff; border: 1px solid #e1e4e8; padding: 15px; margin-bottom: 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
   </style>
 </head>
 <body>
 
-  <div class="container">
+  <!-- App Download Section -->
+  <div class="card">
     <h1>Pocket Tunes</h1>
     <p>A lightweight, offline mobile music player that puts you in full control of your audio library.</p>
-
-    <!-- App Download Section -->
     <a href="https://github.com/ZakariaYkb/Pocket-Tunes/releases/download/v1.0.0/app-release.apk" class="btn">Download App (.APK)</a>
+  </div>
 
-    <div class="disclaimer">
-      <strong>Notice & Copyright Disclaimer:</strong><br>
-      Pocket Tunes functions solely as an offline media playback software and comes with no pre-packaged audio files. The app does not provide, source, or host copyrighted content. All media imported into the application is the sole responsibility of the user.
-    </div>
+  <!-- Upload / Creator Section -->
+  <div class="card">
+    <h2>Upload & Share a Music Package</h2>
+    <form id="uploadForm">
+      <label>Package Title / Song Name:</label>
+      <input type="text" id="songTitle" required placeholder="e.g. Chill Beats Vol 1">
 
-    <!-- Audio Library Section -->
-    <h2>Free Sound Library</h2>
-    <p>Download free, royalty-free audio packs to use inside Pocket Tunes:</p>
+      <label>Category Name:</label>
+      <input type="text" id="categoryName" required placeholder="e.g. Study Vibes">
 
-    <ul>
-      <li>
-        <div>
-          <strong>Royalty-Free Audio Pack #1</strong><br>
-          <small>Format: .zip • User-provided external link</small>
-        </div>
-        <a href="#" class="btn btn-secondary">Download Audio</a>
-      </li>
+      <label>Your Name / Artist Name:</label>
+      <input type="text" id="uploaderName" required placeholder="e.g. Zakaria">
+
+      <label>Icon Key:</label>
+      <select id="iconKey">
+        <option value="cassette">Cassette</option>
+        <option value="gym">Gym</option>
+        <option value="star">Star</option>
+      </select>
+
+      <label>Audio File (.mp3):</label>
+      <input type="file" id="audioFile" accept="audio/*" required>
+
+      <label>Cover Art (Optional Image):</label>
+      <input type="file" id="artFile" accept="image/*">
+
+      <label>Lyrics (Optional):</label>
+      <textarea id="songLyrics" rows="3" placeholder="Paste lyrics here..."></textarea>
+
+      <button type="button" onclick="handleUpload()" class="btn">Publish .ptunes Package</button>
+    </form>
+  </div>
+
+  <!-- Library Listing Section -->
+  <div class="card">
+    <h2>Community Sound Packages</h2>
+    <ul id="packagesList">
+      <li>Loading audio packages...</li>
     </ul>
   </div>
 
+  <script>
+    // Config Supabase
+    const SUPABASE_URL = 'https://uuxmtkpbbyvgxdspmbze.supabase.co/rest/v1/';
+    const SUPABASE_ANON_KEY = 'sb_publishable_Lw8f8FJrAT17RY4hJT4MMg_2dn2pwSX';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // 1. Fetch & Display Uploaded Packages
+    async function loadPackages() {
+      const { data: packages, error } = await supabase.from('audio_packages').select('*').order('id', { ascending: false });
+      const list = document.getElementById('packagesList');
+      
+      if (error || !packages || packages.length === 0) {
+        list.innerHTML = '<li>No packages available yet. Be the first to upload!</li>';
+        return;
+      }
+
+      list.innerHTML = '';
+      packages.forEach(pkg => {
+        const badge = pkg.is_verified ? '<span class="verified-badge">✔ Verified</span>' : '';
+        list.innerHTML += `
+          <li>
+            <div>
+              <strong>${pkg.title}</strong> (${pkg.category_name})<br>
+              <small>By ${pkg.uploader_name} ${badge}</small>
+            </div>
+            <a href="${pkg.file_url}" class="btn btn-secondary" download>Download .ptunes</a>
+          </li>
+        `;
+      });
+    }
+
+    // 2. Package Creation & Upload
+    async function handleUpload() {
+      const zip = new JSZip();
+      const title = document.getElementById('songTitle').value.trim();
+      const categoryName = document.getElementById('categoryName').value.trim();
+      const uploaderName = document.getElementById('uploaderName').value.trim();
+      const iconKey = document.getElementById('iconKey').value;
+      const lyrics = document.getElementById('songLyrics').value.trim() || null;
+      
+      const audioInput = document.getElementById('audioFile').files[0];
+      const artInput = document.getElementById('artFile').files[0];
+
+      if (!title || !categoryName || !uploaderName || !audioInput) {
+        alert("Please fill in all required fields and select an MP3 file.");
+        return;
+      }
+
+      const audioFileName = `${crypto.randomUUID()}.mp3`;
+      const artFileName = artInput ? `${crypto.randomUUID()}.img` : null;
+
+      zip.folder("audio").file(audioFileName, audioInput);
+      if (artInput) zip.folder("art").file(artFileName, artInput);
+
+      const manifest = {
+        format: 1,
+        category: categoryName,
+        icon: iconKey,
+        songs: [{
+          title: title,
+          artist: uploaderName,
+          durationMs: 0,
+          audio: audioFileName,
+          art: artFileName,
+          lyrics: lyrics
+        }]
+      };
+
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+      // Generate .ptunes Zip Blob
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const fileName = `${categoryName.replace(/\s+/g, '_')}_${Date.now()}.ptunes`;
+
+      // Upload file to Supabase Storage
+      const { data: storageData, error: storageError } = await supabase.storage
+        .from('ptunes-files')
+        .upload(fileName, zipBlob);
+
+      if (storageError) {
+        alert("Upload error: " + storageError.message);
+        return;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage.from('ptunes-files').getPublicUrl(fileName);
+
+      // Insert Record into Database
+      const { error: dbError } = await supabase.from('audio_packages').insert([{
+        title: title,
+        category_name: categoryName,
+        uploader_name: uploaderName,
+        file_url: urlData.publicUrl,
+        is_verified: false
+      }]);
+
+      if (!dbError) {
+        alert("Package uploaded successfully!");
+        document.getElementById('uploadForm').reset();
+        loadPackages();
+      } else {
+        alert("Database error: " + dbError.message);
+      }
+    }
+
+    // Load packages on page load
+    loadPackages();
+  </script>
 </body>
 </html>
