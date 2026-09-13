@@ -103,14 +103,12 @@
     /* Clean Row Track Layout & Highlight Selection */
     .audio-item { 
       display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
+      flex-direction: column;
       background: #fafbfc; 
       padding: 10px 14px; 
       border: 1px solid #eaecef; 
       border-radius: 8px; 
       margin-bottom: 8px; 
-      gap: 12px; 
       cursor: pointer; 
       user-select: none; 
       transition: background 0.15s ease, border-color 0.15s ease; 
@@ -121,6 +119,14 @@
       border-color: #2da44e; 
     }
 
+    .audio-main-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+
     .audio-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
     .audio-cover-art { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid #e1e4e8; background: #fff; }
     .audio-cover-placeholder { width: 52px; height: 52px; border-radius: 8px; background: #eaecef; display: flex; align-items: center; justify-content: center; font-size: 1.5em; flex-shrink: 0; color: #57606a; border: 1px solid #e1e4e8; }
@@ -129,6 +135,50 @@
     .audio-title { font-weight: 600; color: #1f2328; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .audio-artist { font-size: 0.82em; color: #57606a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .audio-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; position: relative; }
+
+    /* Expandable Progress Bar Section */
+    .audio-player-drawer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease, padding 0.3s ease;
+      width: 100%;
+      padding: 0 4px;
+    }
+    .audio-player-drawer.active {
+      max-height: 60px;
+      padding-top: 10px;
+    }
+    .progress-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      font-size: 0.75em;
+      color: #57606a;
+    }
+    .progress-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #d0d7de;
+      outline: none;
+      cursor: pointer;
+    }
+    .progress-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #0366d6;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .progress-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
 
     /* 3-Dots Dropdown Menu */
     .dropdown { position: relative; display: inline-block; }
@@ -189,7 +239,8 @@
       .category-actions { width: 100%; justify-content: space-between; }
       .category-actions .btn { flex: 1; text-align: center; }
 
-      .audio-item { padding: 8px 10px; gap: 10px; }
+      .audio-item { padding: 8px 10px; }
+      .audio-main-row { gap: 10px; }
       .audio-cover-art, .audio-cover-placeholder { width: 46px; height: 46px; font-size: 1.3em; }
       .audio-actions { gap: 6px; }
 
@@ -219,7 +270,7 @@
     <div class="header-action">
       <div>
         <h2 style="margin:0;">Community Categories</h2>
-        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click play to preview audio, click tracks to select, or download.</p>
+        <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click play to preview audio, use the scrub bar, or download.</p>
       </div>
       <div class="header-buttons">
         <button onclick="openModal('authModal')" class="btn btn-outline" id="authBtn">Creator Sign In / Apply</button>
@@ -379,16 +430,15 @@
 
     let activeUser = JSON.parse(localStorage.getItem('ptunes_user')) || null;
     
-    // Performance Optimization: Global Data & Map Lookup (Zero DOM JSON Bloat)
     let allTracks = []; 
     const trackMap = new Map();
     let searchDebounceTimer = null;
 
-    // Singleton Lazy Audio Player
+    // Singleton Audio Player Management
     let currentAudioPlayer = null;
     let currentPlayingTrackId = null;
+    let progressAnimationFrame = null;
 
-    // Close open dropdowns when clicking anywhere outside
     document.addEventListener('click', function(event) {
       if (!event.target.closest('.dropdown')) {
         document.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.remove('show'));
@@ -398,6 +448,13 @@
     function escapeHtml(str) {
       if (!str) return '';
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function formatTime(seconds) {
+      if (isNaN(seconds)) return "0:00";
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
 
     function updateAuthButtonState() {
@@ -421,9 +478,8 @@
       openModal('uploadModal');
     }
 
-    // Toggle Category Expansion
     function toggleCategoryCollapse(catClass, event) {
-      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.closest('button') || event.target.closest('.dropdown-menu')) return;
+      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.tagName === 'INPUT' || event.target.closest('button') || event.target.closest('.dropdown-menu') || event.target.closest('.audio-player-drawer')) return;
       
       const listElement = document.getElementById(`audio-list-${catClass}`);
       if (listElement) {
@@ -431,14 +487,12 @@
       }
     }
 
-    // Track Selection Toggle
     function toggleTrackSelection(element, catClass, event) {
-      if (event.target.closest('button') || event.target.closest('.dropdown-menu')) return;
+      if (event.target.closest('button') || event.target.closest('.dropdown-menu') || event.target.closest('.audio-player-drawer')) return;
       element.classList.toggle('selected');
       updateToggleBtnState(catClass);
     }
 
-    // Toggle Dropdown Menu
     function toggleDropdown(trackId, event) {
       event.stopPropagation();
       document.querySelectorAll('.dropdown-menu').forEach(menu => {
@@ -448,7 +502,6 @@
       if (targetMenu) targetMenu.classList.toggle('show');
     }
 
-    // 1. Fetch Categories & Tracks from Supabase
     async function loadCategories() {
       const container = document.getElementById('categoriesContainer');
       const { data: songs, error } = await supabaseClient.from('audio_tracks').select('*').order('id', { ascending: false });
@@ -466,7 +519,6 @@
       renderCategories(currentQuery);
     }
 
-    // Handle Instant Search Typing with Debounce (150ms) to Prevent UI Lag
     function handleSearch() {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
@@ -475,12 +527,10 @@
       }, 150);
     }
 
-    // High Performance Render Function
     function renderCategories(query = '') {
       const container = document.getElementById('categoriesContainer');
       const cleanQuery = query.toLowerCase().trim();
 
-      // Fast Array Filtering
       const filteredSongs = allTracks.filter(song => {
         if (!cleanQuery) return true;
         const titleMatch = song.title && song.title.toLowerCase().includes(cleanQuery);
@@ -488,7 +538,6 @@
         return titleMatch || artistMatch;
       });
 
-      // Handle Empty State
       if (filteredSongs.length === 0) {
         if (cleanQuery) {
           container.innerHTML = `<p style="text-align: center; color: #57606a; padding: 20px 0;">No audio tracks or artists found matching "<strong>${escapeHtml(query)}</strong>".</p>`;
@@ -498,7 +547,6 @@
         return;
       }
 
-      // Group matching tracks by Category
       const categories = {};
       filteredSongs.forEach(song => {
         const cat = song.category_name;
@@ -511,14 +559,12 @@
       container.innerHTML = '';
       const isSearching = cleanQuery.length > 0;
 
-      // Efficient DOM String Construction
       Object.keys(categories).forEach(catName => {
         const catData = categories[catName];
         const catClass = catName.replace(/\s+/g, '_');
         let tracksHTML = '';
 
         catData.tracks.forEach(track => {
-          // Lazy Loading Image Strategy
           const coverHTML = track.art_url 
             ? `<img src="${track.art_url}" loading="lazy" class="audio-cover-art" alt="Cover Art">`
             : `<div class="audio-cover-placeholder">🎵</div>`;
@@ -533,12 +579,8 @@
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
                 </button>
                 <div class="dropdown-menu" id="dropdown-${track.id}">
-                  <button onclick="openEditModal(${track.id}, event)" class="dropdown-item">
-                    ✏️ Edit Track
-                  </button>
-                  <button onclick="deleteTrack(${track.id}, event)" class="dropdown-item danger">
-                    🗑️ Delete Track
-                  </button>
+                  <button onclick="openEditModal(${track.id}, event)" class="dropdown-item">✏️ Edit Track</button>
+                  <button onclick="deleteTrack(${track.id}, event)" class="dropdown-item danger">🗑️ Delete Track</button>
                 </div>
               </div>
             `;
@@ -551,22 +593,33 @@
 
           tracksHTML += `
             <div class="audio-item" data-id="${track.id}" onclick="toggleTrackSelection(this, '${catClass}', event)">
-              <div class="audio-left">
-                <button id="play-btn-${track.id}" onclick="toggleAudioPreview(${track.id}, event)" class="btn btn-play ${isPlaying ? 'playing' : ''}" title="Preview Audio">
-                  ${playIconSvg}
-                </button>
-                ${coverHTML}
-                <div class="audio-info">
-                  <span class="audio-title" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
-                  <span class="audio-artist" title="${escapeHtml(track.artist_name)}">${escapeHtml(track.artist_name)}</span>
+              <div class="audio-main-row">
+                <div class="audio-left">
+                  <button id="play-btn-${track.id}" onclick="toggleAudioPreview(${track.id}, event)" class="btn btn-play ${isPlaying ? 'playing' : ''}" title="Preview Audio">
+                    ${playIconSvg}
+                  </button>
+                  ${coverHTML}
+                  <div class="audio-info">
+                    <span class="audio-title" title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</span>
+                    <span class="audio-artist" title="${escapeHtml(track.artist_name)}">${escapeHtml(track.artist_name)}</span>
+                  </div>
+                </div>
+                <div class="audio-actions">
+                  <button onclick="downloadSingleTrack(${track.id})" class="btn btn-secondary btn-sm btn-outline download-btn" title="Download (.ptunes)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span class="btn-text">Download (.ptunes)</span>
+                  </button>
+                  ${actionMenuHTML}
                 </div>
               </div>
-              <div class="audio-actions">
-                <button onclick="downloadSingleTrack(${track.id})" class="btn btn-secondary btn-sm btn-outline download-btn" title="Download (.ptunes)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  <span class="btn-text">Download (.ptunes)</span>
-                </button>
-                ${actionMenuHTML}
+              
+              <!-- Expandable Progress Bar Drawer for Mobile & Desktop -->
+              <div class="audio-player-drawer ${isPlaying ? 'active' : ''}" id="drawer-${track.id}">
+                <div class="progress-container" onclick="event.stopPropagation()">
+                  <span id="current-time-${track.id}">0:00</span>
+                  <input type="range" id="progress-${track.id}" class="progress-slider" value="0" min="0" max="100" step="0.1" oninput="seekAudio(${track.id}, this.value)">
+                  <span id="duration-${track.id}">0:00</span>
+                </div>
               </div>
             </div>
           `;
@@ -594,7 +647,7 @@
       });
     }
 
-    // Optimized Lazy Audio Preview Controller
+    // Singleton Audio Preview Controller with Scrubbing Support
     function toggleAudioPreview(trackId, event) {
       if (event) event.stopPropagation();
 
@@ -604,48 +657,100 @@
         return;
       }
 
-      // 1. If clicking the currently playing track -> Pause it
+      // 1. If clicking the currently playing track -> Pause & Close drawer
       if (currentPlayingTrackId === trackId && currentAudioPlayer) {
         currentAudioPlayer.pause();
+        stopProgressLoop();
+        resetTrackUI(trackId);
+        currentPlayingTrackId = null;
+        currentAudioPlayer = null;
         return;
       }
 
-      // 2. Stop any existing playing audio
+      // 2. Stop and reset any previously playing audio track cleanly
       if (currentAudioPlayer) {
         currentAudioPlayer.pause();
+        stopProgressLoop();
+        if (currentPlayingTrackId !== null) {
+          resetTrackUI(currentPlayingTrackId);
+        }
       }
 
-      // 3. Reset previously playing button icon
-      if (currentPlayingTrackId) {
-        updatePlayBtnIcon(currentPlayingTrackId, false);
-      }
-
-      // 4. Initialize lazy player on-demand
+      // 3. Initialize new audio playback stream
       currentPlayingTrackId = trackId;
       currentAudioPlayer = new Audio(track.audio_url);
+      
       updatePlayBtnIcon(trackId, true);
+      toggleDrawer(trackId, true);
 
       currentAudioPlayer.play().catch(err => {
         console.error("Audio playback error:", err);
-        updatePlayBtnIcon(trackId, false);
+        resetTrackUI(trackId);
         currentPlayingTrackId = null;
+        currentAudioPlayer = null;
       });
 
-      // Handle natural track completion
+      currentAudioPlayer.onloadedmetadata = () => {
+        const durEl = document.getElementById(`duration-${trackId}`);
+        if (durEl) durEl.innerText = formatTime(currentAudioPlayer.duration);
+      };
+
       currentAudioPlayer.onended = () => {
-        updatePlayBtnIcon(trackId, false);
+        stopProgressLoop();
+        resetTrackUI(trackId);
         currentPlayingTrackId = null;
         currentAudioPlayer = null;
       };
 
-      currentAudioPlayer.onpause = () => {
-        updatePlayBtnIcon(trackId, false);
-        currentPlayingTrackId = null;
-        currentAudioPlayer = null;
-      };
+      startProgressLoop(trackId);
     }
 
-    function updatePlayBtnIcon(trackId, isPlaying) {
+    function startProgressLoop(trackId) {
+      stopProgressLoop();
+      function updateProgress() {
+        if (!currentAudioPlayer || currentPlayingTrackId !== trackId) return;
+        
+        const currentTime = currentAudioPlayer.currentTime;
+        const duration = currentAudioPlayer.duration || 1;
+        
+        const slider = document.getElementById(`progress-${trackId}`);
+        const currTimeEl = document.getElementById(`current-time-${trackId}`);
+        
+        if (slider && currTimeEl) {
+          slider.value = (currentTime / duration) * 100;
+          currTimeEl.innerText = formatTime(currentTime);
+        }
+        
+        progressAnimationFrame = requestAnimationFrame(updateProgress);
+      }
+      progressAnimationFrame = requestAnimationFrame(updateProgress);
+    }
+
+    function stopProgressLoop() {
+      if (progressAnimationFrame) {
+        cancelAnimationFrame(progressAnimationFrame);
+        progressAnimationFrame = null;
+      }
+    }
+
+    function seekAudio(trackId, percentVal) {
+      if (!currentAudioPlayer || currentPlayingTrackId !== trackId) return;
+      const duration = currentAudioPlayer.duration;
+      if (!isNaN(duration)) {
+        currentAudioPlayer.currentTime = (percentVal / 100) * duration;
+      }
+    }
+
+    function resetTrackUI(trackId) {
+      updatePlayBtnIcon(trackId, false);
+      toggleDrawer(trackId, false);
+      const slider = document.getElementById(`progress-${trackId}`);
+      const currTimeEl = document.getElementById(`current-time-${trackId}`);
+      if (slider) slider.value = 0;
+      if (currTimeEl) currTimeEl.innerText = "0:00";
+    }
+
+    function togglePlayBtnIcon(trackId, isPlaying) {
       const btn = document.getElementById(`play-btn-${trackId}`);
       if (!btn) return;
 
@@ -658,7 +763,16 @@
       }
     }
 
-    // Open Edit Modal via Map Lookup
+    function toggleDrawer(trackId, show) {
+      const drawer = document.getElementById(`drawer-${trackId}`);
+      if (!drawer) return;
+      if (show) {
+        drawer.classList.add('active');
+      } else {
+        drawer.classList.remove('active');
+      }
+    }
+
     function openEditModal(trackId, event) {
       if (event) event.stopPropagation();
       document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
@@ -679,7 +793,6 @@
       openModal('editModal');
     }
 
-    // Save Track Edits
     async function handleSaveEdit() {
       const trackId = document.getElementById('editTrackId').value;
       const categoryName = document.getElementById('editCategoryName').value.trim();
@@ -740,7 +853,6 @@
       }
     }
 
-    // Delete Single Track Function via Map Lookup
     async function deleteTrack(trackId, event) {
       if (event) event.stopPropagation();
       document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
@@ -765,7 +877,6 @@
       }
     }
 
-    // Toggle Select All / Deselect All
     function toggleCategorySelect(catClass) {
       const trackItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item`);
       const btn = document.getElementById(`toggle-btn-${catClass}`);
@@ -794,7 +905,6 @@
       btn.innerText = allSelected ? 'Deselect All' : 'Select All';
     }
 
-    // Download Selected Tracks as 1 Combined .ptunes Package
     async function downloadSelectedPackage(catName) {
       const catClass = catName.replace(/\s+/g, '_');
       const selectedItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item.selected`);
@@ -891,7 +1001,6 @@
       a.click();
     }
 
-    // 2. Single Track Upload with Duplicate Check
     async function handleUpload() {
       if (!activeUser || !activeUser.is_verified) return;
 
@@ -909,7 +1018,6 @@
         return;
       }
 
-      // DUPLICATE CHECK
       const { data: existingTracks } = await supabaseClient
         .from('audio_tracks')
         .select('id')
@@ -965,7 +1073,6 @@
       }
     }
 
-    // 3. Import Full .ptunes / Zip Package with Duplicate Checking
     async function handlePackageImport() {
       if (!activeUser || !activeUser.is_verified) return;
 
@@ -1066,7 +1173,6 @@
       }
     }
 
-    // Auth & Portal Handling
     async function handleAuthSubmit(action) {
       const email = document.getElementById('authEmail').value.trim();
       const profileName = document.getElementById('authProfileName').value.trim();
@@ -1133,7 +1239,6 @@
       }
     }
 
-    // Owner Approval System
     async function loadPendingUsers() {
       if (!activeUser || !activeUser.is_admin) return;
       const { data: pending, error } = await supabaseClient
@@ -1181,7 +1286,6 @@
       }
     }
 
-    // Initialize Application
     updateAuthButtonState();
     loadCategories();
     if (activeUser && activeUser.is_admin) {
