@@ -628,7 +628,7 @@
       btn.innerText = allSelected ? 'Deselect All' : 'Select All';
     }
 
-    // 2. Download Selected Tracks as 1 Combined .ptunes Package
+    // Download Selected Tracks as 1 Combined .ptunes Package
     async function downloadSelectedPackage(catName) {
       const catClass = catName.replace(/\s+/g, '_');
       const selectedItems = document.querySelectorAll(`#audio-list-${catClass} .audio-item.selected`);
@@ -719,13 +719,87 @@
       a.click();
     }
 
-    // 3. Import Full .ptunes / Zip Package
+    // 2. Single Track Upload with Duplicate Check
+    async function handleUpload() {
+      if (!activeUser || !activeUser.is_verified) return;
+
+      const categoryName = document.getElementById('categoryName').value.trim();
+      const songTitle = document.getElementById('songTitle').value.trim();
+      const artistName = document.getElementById('artistName').value.trim() || activeUser.profile_name;
+      const iconKey = document.getElementById('iconKey').value;
+      const lyrics = document.getElementById('songLyrics').value.trim() || null;
+
+      const audioFile = document.getElementById('audioFile').files[0];
+      const artFile = document.getElementById('artFile').files[0];
+
+      if (!categoryName || !songTitle || !audioFile) {
+        alert("Please fill in Category Name, Song Title, and select an Audio file.");
+        return;
+      }
+
+      // 🔍 DUPLICATE CHECK
+      const { data: existingTracks } = await supabaseClient
+        .from('audio_tracks')
+        .select('id')
+        .eq('category_name', categoryName)
+        .eq('title', songTitle)
+        .eq('artist_name', artistName);
+
+      if (existingTracks && existingTracks.length > 0) {
+        alert(`A track titled "${songTitle}" by "${artistName}" already exists in "${categoryName}". Upload cancelled.`);
+        return;
+      }
+
+      const uploadBtn = document.getElementById('uploadBtn');
+      uploadBtn.innerText = "Publishing...";
+      uploadBtn.disabled = true;
+
+      try {
+        const audioFileName = `${crypto.randomUUID()}.mp3`;
+        await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioFile);
+        const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
+
+        let artUrl = null;
+        if (artFile) {
+          const artFileName = `${crypto.randomUUID()}.img`;
+          await supabaseClient.storage.from('ptunes-files').upload(artFileName, artFile);
+          const { data: artUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName);
+          artUrl = artUrlData.publicUrl;
+        }
+
+        const { error } = await supabaseClient.from('audio_tracks').insert([{
+          category_name: categoryName,
+          title: songTitle,
+          artist_name: artistName,
+          uploader_name: activeUser.profile_name,
+          audio_url: audioUrlData.publicUrl,
+          art_url: artUrl,
+          lyrics: lyrics,
+          icon_key: iconKey
+        }]);
+
+        if (!error) {
+          alert("Audio track published successfully!");
+          closeModal('uploadModal');
+          loadCategories();
+        } else {
+          alert("Upload failed: " + error.message);
+        }
+      } catch (err) {
+        alert("Upload error: " + err.message);
+      } finally {
+        uploadBtn.innerText = "Publish Audio Track";
+        uploadBtn.disabled = false;
+      }
+    }
+
+    // 3. Import Full .ptunes / Zip Package with Duplicate Checking
     async function handlePackageImport() {
       if (!activeUser || !activeUser.is_verified) return;
-    
+
       const categoryName = document.getElementById('categoryName').value.trim();
       const packageFile = document.getElementById('importPackageFile').files[0];
-    
+
       if (!categoryName) {
         alert("Please specify a Target Category Name first.");
         return;
@@ -734,35 +808,35 @@
         alert("Please select a .ptunes or .zip file to import.");
         return;
       }
-    
+
       const importBtn = document.getElementById('importBtn');
       importBtn.innerText = "Checking & Extracting Package...";
       importBtn.disabled = true;
-    
+
       try {
         const zip = await JSZip.loadAsync(packageFile);
         const manifestFile = zip.file("manifest.json");
-    
+
         if (!manifestFile) {
           alert("Invalid package format: Missing manifest.json file.");
           return;
         }
-    
+
         const manifestText = await manifestFile.async("text");
         const manifest = JSON.parse(manifestText);
-    
+
         if (!manifest.songs || manifest.songs.length === 0) {
           alert("No songs found inside this package.");
           return;
         }
-    
+
         let addedCount = 0;
         let skippedCount = 0;
-    
+
         for (const song of manifest.songs) {
           const songTitle = song.title || "Untitled";
           const songArtist = song.artist || activeUser.profile_name;
-    
+
           // 🔍 DUPLICATE CHECK: Query database for existing track with same Title & Artist in this Category
           const { data: existingTracks } = await supabaseClient
             .from('audio_tracks')
@@ -770,22 +844,23 @@
             .eq('category_name', categoryName)
             .eq('title', songTitle)
             .eq('artist_name', songArtist);
-    
+
           if (existingTracks && existingTracks.length > 0) {
             // Track already exists! Skip uploading files & inserting duplicate row
             skippedCount++;
             continue;
           }
-    
-          // Track does NOT exist -> Proceed with storage upload and database insertion
+
+          // Extract & upload audio
           const audioZipEntry = zip.file(`audio/${song.audio}`) || zip.file(song.audio);
           if (!audioZipEntry) continue;
-    
+
           const audioBlob = await audioZipEntry.async("blob");
           const audioFileName = `${crypto.randomUUID()}.mp3`;
           await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioBlob);
           const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
-    
+
+          // Extract & upload cover art if exists
           let artUrl = null;
           if (song.art) {
             const artZipEntry = zip.file(`art/${song.art}`) || zip.file(song.art);
@@ -796,7 +871,8 @@
               artUrl = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName).data.publicUrl;
             }
           }
-    
+
+          // Insert into database
           await supabaseClient.from('audio_tracks').insert([{
             category_name: categoryName,
             title: songTitle,
@@ -807,25 +883,13 @@
             lyrics: song.lyrics || null,
             icon_key: manifest.icon || "cassette"
           }]);
-    
+
           addedCount++;
         }
-    
+
         alert(`Import Summary:\n• Added: ${addedCount} new track(s)\n• Skipped (Duplicates): ${skippedCount} track(s)`);
         closeModal('uploadModal');
         loadCategories();
-    
-      } catch (err) {
-        alert("Import Error: " + err.message);
-      } finally {
-        importBtn.innerText = "Import Package Content";
-        importBtn.disabled = false;
-      }
-    }
-
-        alert(`Successfully imported tracks into "${categoryName}"!`);
-        closeModal('uploadModal');
-        loadCategories();
 
       } catch (err) {
         alert("Import Error: " + err.message);
@@ -835,136 +899,128 @@
       }
     }
 
-    // 4. Single Track Upload
-    async function handleUpload() {
-      if (!activeUser || !activeUser.is_verified) return;
-
-      const categoryName = document.getElementById('categoryName').value.trim();
-      const title = document.getElementById('songTitle').value.trim();
-      const artistName = document.getElementById('artistName').value.trim();
-      const iconKey = document.getElementById('iconKey').value;
-      const lyrics = document.getElementById('songLyrics').value.trim() || null;
-      
-      const audioInput = document.getElementById('audioFile').files[0];
-      const artInput = document.getElementById('artFile').files[0];
-
-      if (!categoryName || !title || !artistName || !audioInput) {
-        alert("Please fill in all required fields (Category, Title, Artist, and MP3).");
-        return;
-      }
-
-      const uploadBtn = document.getElementById('uploadBtn');
-      uploadBtn.innerText = "Uploading...";
-      uploadBtn.disabled = true;
-
-      try {
-        const audioFileName = `${crypto.randomUUID()}.mp3`;
-        await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioInput);
-        const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
-
-        let artUrl = null;
-        if (artInput) {
-          const artFileName = `${crypto.randomUUID()}.img`;
-          await supabaseClient.storage.from('ptunes-files').upload(artFileName, artInput);
-          artUrl = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName).data.publicUrl;
-        }
-
-        const { error: dbError } = await supabaseClient.from('audio_tracks').insert([{
-          category_name: categoryName,
-          title: title,
-          artist_name: artistName,
-          uploader_name: activeUser.profile_name,
-          audio_url: audioUrlData.publicUrl,
-          art_url: artUrl,
-          lyrics: lyrics,
-          icon_key: iconKey
-        }]);
-
-        if (!dbError) {
-          alert("Audio published successfully!");
-          closeModal('uploadModal');
-          loadCategories();
-        } else {
-          alert("Database error: " + dbError.message);
-        }
-      } catch (err) {
-        alert("Error: " + err.message);
-      } finally {
-        uploadBtn.innerText = "Publish Audio Track";
-        uploadBtn.disabled = false;
-      }
-    }
-
-    // Auth & Admin Functions
-    async function handleAuthSubmit(mode) {
+    // Auth & Portal Handling
+    async function handleAuthSubmit(action) {
       const email = document.getElementById('authEmail').value.trim();
-      const name = document.getElementById('authProfileName').value.trim();
-      const pass = document.getElementById('authPassword').value.trim();
+      const profileName = document.getElementById('authProfileName').value.trim();
+      const password = document.getElementById('authPassword').value;
 
-      if (!email || !name || !pass) {
-        alert("Please fill in all account fields.");
+      if (!email || !password || !profileName) {
+        alert("Please fill in all fields.");
         return;
       }
 
-      if (mode === 'apply') {
-        const { error } = await supabaseClient.from('creator_accounts').insert([{
-          email: email, profile_name: name, passcode: pass, is_verified: false
+      if (action === 'login') {
+        const { data: user, error } = await supabaseClient
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .eq('password', password)
+          .single();
+
+        if (error || !user) {
+          alert("Invalid email or password.");
+          return;
+        }
+
+        if (!user.is_verified) {
+          alert("Your application is still pending owner verification.");
+          return;
+        }
+
+        activeUser = user;
+        localStorage.setItem('ptunes_user', JSON.stringify(user));
+        updateAuthButtonState();
+        closeModal('authModal');
+        alert(`Welcome back, ${user.profile_name}!`);
+        if (user.is_admin) {
+          document.getElementById('adminPanel').style.display = 'block';
+          loadPendingUsers();
+        }
+        loadCategories();
+      } else if (action === 'apply') {
+        const { data: existing } = await supabaseClient
+          .from('users')
+          .select('*')
+          .eq('email', email);
+
+        if (existing && existing.length > 0) {
+          alert("An account with this email already exists. Please sign in instead.");
+          return;
+        }
+
+        const { error } = await supabaseClient.from('users').insert([{
+          email: email,
+          profile_name: profileName,
+          password: password,
+          is_verified: false,
+          is_admin: false
         }]);
 
         if (!error) {
-          alert("Application submitted! The platform owner will review and verify your account shortly.");
+          alert("Application submitted! The platform owner will review your verification request.");
           closeModal('authModal');
         } else {
-          alert("Error applying: " + error.message);
-        }
-      } else {
-        const { data } = await supabaseClient.from('creator_accounts').select('*').eq('email', email).eq('passcode', pass).single();
-        if (data) {
-          activeUser = data;
-          localStorage.setItem('ptunes_user', JSON.stringify(data));
-          if (data.is_admin) document.getElementById('adminPanel').style.display = 'block';
-          alert(`Welcome back ${data.profile_name}! Verified status: ${data.is_verified}`);
-          updateAuthButtonState();
-          closeModal('authModal');
-          loadCategories();
-          if (data.is_admin) loadPendingUsers();
-        } else {
-          alert("Invalid credentials or account not found.");
+          alert("Application failed: " + error.message);
         }
       }
     }
 
+    // Owner Approval System
     async function loadPendingUsers() {
-      const { data: users } = await supabaseClient.from('creator_accounts').select('*').eq('is_verified', false);
+      if (!activeUser || !activeUser.is_admin) return;
+      const { data: pending, error } = await supabaseClient
+        .from('users')
+        .select('*')
+        .eq('is_verified', false);
+
       const container = document.getElementById('pendingUsersList');
-      if (!users || users.length === 0) {
-        container.innerHTML = 'No pending creator applications.';
+      if (error || !pending || pending.length === 0) {
+        container.innerHTML = '<p>No pending applications.</p>';
         return;
       }
-      container.innerHTML = '';
-      users.forEach(u => {
-        container.innerHTML += `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span><strong>${u.profile_name}</strong> (${u.email})</span>
-            <button onclick="approveUser(${u.id})" class="btn btn-sm">Approve & Verify</button>
-          </div>
+
+      let html = '<ul style="padding-left: 20px;">';
+      pending.forEach(u => {
+        html += `
+          <li style="margin-bottom: 8px;">
+            <strong>${u.profile_name}</strong> (${u.email})
+            <button onclick="approveUser(${u.id})" class="btn btn-sm" style="margin-left: 8px;">Approve</button>
+            <button onclick="rejectUser(${u.id})" class="btn btn-sm btn-danger" style="margin-left: 4px;">Reject</button>
+          </li>
         `;
       });
+      html += '</ul>';
+      container.innerHTML = html;
     }
 
-    async function approveUser(id) {
-      await supabaseClient.from('creator_accounts').update({ is_verified: true }).eq('id', id);
-      alert("Creator verified!");
-      loadPendingUsers();
+    async function approveUser(userId) {
+      const { error } = await supabaseClient.from('users').update({ is_verified: true }).eq('id', userId);
+      if (!error) {
+        alert("User approved!");
+        loadPendingUsers();
+      } else {
+        alert("Error approving user: " + error.message);
+      }
     }
 
+    async function rejectUser(userId) {
+      const { error } = await supabaseClient.from('users').delete().eq('id', userId);
+      if (!error) {
+        alert("User rejected.");
+        loadPendingUsers();
+      } else {
+        alert("Error rejecting user: " + error.message);
+      }
+    }
+
+    // Initialize
+    updateAuthButtonState();
+    loadCategories();
     if (activeUser && activeUser.is_admin) {
       document.getElementById('adminPanel').style.display = 'block';
       loadPendingUsers();
     }
-
-    updateAuthButtonState();
-    loadCategories();
   </script>
 </body>
 </html>
