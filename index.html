@@ -59,7 +59,7 @@
       <label>Lyrics (Optional):</label>
       <textarea id="songLyrics" rows="3" placeholder="Paste lyrics here..."></textarea>
 
-      <button type="button" onclick="handleUpload()" class="btn">Publish .ptunes Package</button>
+      <button type="button" id="uploadBtn" class="btn">Publish .ptunes Package</button>
     </form>
   </div>
 
@@ -72,14 +72,25 @@
   </div>
 
   <script>
-    // Config Supabase
-    const SUPABASE_URL = 'https://uuxmtkpbbyvgxdspmbze.supabase.co/rest/v1/';
+    // Fixed base Supabase URL
+    const SUPABASE_URL = 'https://uuxmtkpbbyvgxdspmbze.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_Lw8f8FJrAT17RY4hJT4MMg_2dn2pwSX';
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    let supabaseClient = null;
+
+    function getSupabase() {
+      if (!supabaseClient && window.supabase && window.supabase.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+      return supabaseClient;
+    }
 
     // 1. Fetch & Display Uploaded Packages
     async function loadPackages() {
-      const { data: packages, error } = await supabase.from('audio_packages').select('*').order('id', { ascending: false });
+      const client = getSupabase();
+      if (!client) return;
+
+      const { data: packages, error } = await client.from('audio_packages').select('*').order('id', { ascending: false });
       const list = document.getElementById('packagesList');
       
       if (error || !packages || packages.length === 0) {
@@ -104,7 +115,12 @@
 
     // 2. Package Creation & Upload
     async function handleUpload() {
-      const zip = new JSZip();
+      const client = getSupabase();
+      if (!client) {
+        alert("Supabase SDK failed to load. Please refresh the page.");
+        return;
+      }
+
       const title = document.getElementById('songTitle').value.trim();
       const categoryName = document.getElementById('categoryName').value.trim();
       const uploaderName = document.getElementById('uploaderName').value.trim();
@@ -119,65 +135,76 @@
         return;
       }
 
-      const audioFileName = `${crypto.randomUUID()}.mp3`;
-      const artFileName = artInput ? `${crypto.randomUUID()}.img` : null;
+      const uploadBtn = document.getElementById('uploadBtn');
+      uploadBtn.innerText = "Packaging & Uploading...";
+      uploadBtn.disabled = true;
 
-      zip.folder("audio").file(audioFileName, audioInput);
-      if (artInput) zip.folder("art").file(artFileName, artInput);
+      try {
+        const zip = new JSZip();
+        const audioFileName = `${crypto.randomUUID()}.mp3`;
+        const artFileName = artInput ? `${crypto.randomUUID()}.img` : null;
 
-      const manifest = {
-        format: 1,
-        category: categoryName,
-        icon: iconKey,
-        songs: [{
+        zip.folder("audio").file(audioFileName, audioInput);
+        if (artInput) zip.folder("art").file(artFileName, artInput);
+
+        const manifest = {
+          format: 1,
+          category: categoryName,
+          icon: iconKey,
+          songs: [{
+            title: title,
+            artist: uploaderName,
+            durationMs: 0,
+            audio: audioFileName,
+            art: artFileName,
+            lyrics: lyrics
+          }]
+        };
+
+        zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        const fileName = `${categoryName.replace(/\s+/g, '_')}_${Date.now()}.ptunes`;
+
+        const { data: storageData, error: storageError } = await client.storage
+          .from('ptunes-files')
+          .upload(fileName, zipBlob);
+
+        if (storageError) {
+          alert("Upload error: " + storageError.message);
+          return;
+        }
+
+        const { data: urlData } = client.storage.from('ptunes-files').getPublicUrl(fileName);
+
+        const { error: dbError } = await client.from('audio_packages').insert([{
           title: title,
-          artist: uploaderName,
-          durationMs: 0,
-          audio: audioFileName,
-          art: artFileName,
-          lyrics: lyrics
-        }]
-      };
+          category_name: categoryName,
+          uploader_name: uploaderName,
+          file_url: urlData.publicUrl,
+          is_verified: false
+        }]);
 
-      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
-
-      // Generate .ptunes Zip Blob
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const fileName = `${categoryName.replace(/\s+/g, '_')}_${Date.now()}.ptunes`;
-
-      // Upload file to Supabase Storage
-      const { data: storageData, error: storageError } = await supabase.storage
-        .from('ptunes-files')
-        .upload(fileName, zipBlob);
-
-      if (storageError) {
-        alert("Upload error: " + storageError.message);
-        return;
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage.from('ptunes-files').getPublicUrl(fileName);
-
-      // Insert Record into Database
-      const { error: dbError } = await supabase.from('audio_packages').insert([{
-        title: title,
-        category_name: categoryName,
-        uploader_name: uploaderName,
-        file_url: urlData.publicUrl,
-        is_verified: false
-      }]);
-
-      if (!dbError) {
-        alert("Package uploaded successfully!");
-        document.getElementById('uploadForm').reset();
-        loadPackages();
-      } else {
-        alert("Database error: " + dbError.message);
+        if (!dbError) {
+          alert("Package uploaded successfully!");
+          document.getElementById('uploadForm').reset();
+          loadPackages();
+        } else {
+          alert("Database error: " + dbError.message);
+        }
+      } catch (err) {
+        alert("An error occurred: " + err.message);
+      } finally {
+        uploadBtn.innerText = "Publish .ptunes Package";
+        uploadBtn.disabled = false;
       }
     }
 
-    // Load packages on page load
-    loadPackages();
+    // Attach event listeners after page finishes loading
+    window.addEventListener('DOMContentLoaded', () => {
+      loadPackages();
+      document.getElementById('uploadBtn').addEventListener('click', handleUpload);
+    });
   </script>
 </body>
 </html>
