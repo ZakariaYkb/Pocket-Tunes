@@ -56,6 +56,8 @@
     .btn-outline:hover { background: rgba(3, 102, 214, 0.08); }
     .btn-danger { background: #cf222e; color: white; }
     .btn-danger:hover { background: #a40e26; }
+    .btn-icon { padding: 6px 10px; background: transparent; color: #57606a; border: 1px solid #d0d7de; }
+    .btn-icon:hover { background: #f3f4f6; color: #1f2328; }
     .btn-sm { padding: 6px 12px; font-size: 0.85em; }
 
     .header-action { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -105,7 +107,42 @@
     .audio-info { display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; min-width: 0; }
     .audio-title { font-weight: 600; color: #1f2328; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .audio-artist { font-size: 0.82em; color: #57606a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .audio-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .audio-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; position: relative; }
+
+    /* 3-Dots Dropdown Menu */
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      margin-top: 4px;
+      background-color: #fff;
+      min-width: 140px;
+      box-shadow: 0px 4px 12px rgba(0,0,0,0.15);
+      border: 1px solid #e1e4e8;
+      border-radius: 8px;
+      z-index: 100;
+      overflow: hidden;
+    }
+    .dropdown-menu.show { display: block; }
+    .dropdown-item {
+      padding: 10px 14px;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.88em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #24292e;
+      font-weight: 500;
+    }
+    .dropdown-item:hover { background-color: #f6f8fa; }
+    .dropdown-item.danger { color: #cf222e; }
+    .dropdown-item.danger:hover { background-color: #ffebe9; }
 
     /* Modals */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
@@ -139,10 +176,6 @@
       .download-btn .btn-text { display: none; }
       .download-btn { padding: 8px 10px; border-radius: 6px; }
       .download-btn svg { width: 18px; height: 18px; }
-
-      .delete-btn .btn-text { display: none; }
-      .delete-btn { padding: 8px 10px; border-radius: 6px; }
-      .delete-btn svg { width: 16px; height: 16px; }
 
       .modal-content { padding: 18px; }
     }
@@ -263,6 +296,50 @@
     </div>
   </div>
 
+  <!-- Edit Audio Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0;">Edit Audio Track</h3>
+        <button class="close-btn" onclick="closeModal('editModal')">&times;</button>
+      </div>
+
+      <form id="editForm">
+        <input type="hidden" id="editTrackId">
+
+        <label>Category Name:</label>
+        <input type="text" id="editCategoryName" required>
+
+        <label>Song Title / Audio Name:</label>
+        <input type="text" id="editSongTitle" required>
+
+        <label>Artist Name:</label>
+        <input type="text" id="editArtistName" required>
+
+        <label>Icon Key:</label>
+        <select id="editIconKey">
+          <option value="cassette">Cassette</option>
+          <option value="gym">Gym</option>
+          <option value="star">Star</option>
+        </select>
+
+        <label>Replace Audio File (.mp3) - Optional:</label>
+        <input type="file" id="editAudioFile" accept="audio/*">
+
+        <label>Replace Cover Art Image - Optional:</label>
+        <input type="file" id="editArtFile" accept="image/*">
+
+        <label>Lyrics (Optional):</label>
+        <textarea id="editSongLyrics" rows="2"></textarea>
+
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button type="button" id="saveEditBtn" onclick="handleSaveEdit()" class="btn" style="flex:1;">Save Changes</button>
+          <button type="button" onclick="closeModal('editModal')" class="btn btn-outline">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const SUPABASE_URL = 'https://uuxmtkpbbyvgxdspmbze.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_Lw8f8FJrAT17RY4hJT4MMg_2dn2pwSX';
@@ -270,6 +347,13 @@
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let activeUser = JSON.parse(localStorage.getItem('ptunes_user')) || null;
+
+    // Close open dropdowns when clicking anywhere outside
+    document.addEventListener('click', function(event) {
+      if (!event.target.closest('.dropdown')) {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.remove('show'));
+      }
+    });
 
     function updateAuthButtonState() {
       const authBtn = document.getElementById('authBtn');
@@ -294,7 +378,7 @@
 
     // Toggle Category Expansion
     function toggleCategoryCollapse(catClass, event) {
-      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.closest('button')) return;
+      if (event.target.tagName === 'BUTTON' || event.target.tagName === 'INPUT' || event.target.closest('button') || event.target.closest('.dropdown-menu')) return;
       
       const listElement = document.getElementById(`audio-list-${catClass}`);
       if (listElement) {
@@ -304,9 +388,19 @@
 
     // Track Selection Toggle
     function toggleTrackSelection(element, catClass, event) {
-      if (event.target.closest('button')) return;
+      if (event.target.closest('button') || event.target.closest('.dropdown-menu')) return;
       element.classList.toggle('selected');
       updateToggleBtnState(catClass);
+    }
+
+    // Toggle Dropdown Menu
+    function toggleDropdown(trackId, event) {
+      event.stopPropagation();
+      document.querySelectorAll('.dropdown-menu').forEach(menu => {
+        if (menu.id !== `dropdown-${trackId}`) menu.classList.remove('show');
+      });
+      const targetMenu = document.getElementById(`dropdown-${trackId}`);
+      if (targetMenu) targetMenu.classList.toggle('show');
     }
 
     // 1. Load Categories and Tracks
@@ -340,13 +434,26 @@
             ? `<img src="${track.art_url}" class="audio-cover-art" alt="Cover Art">`
             : `<div class="audio-cover-placeholder">🎵</div>`;
 
-          const canDelete = activeUser && (activeUser.profile_name === track.uploader_name || activeUser.is_admin);
-          const deleteBtnHTML = canDelete 
-            ? `<button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}')" class="btn btn-danger btn-sm delete-btn" title="Delete Track">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                <span class="btn-text">Delete</span>
-               </button>` 
-            : '';
+          const canManage = activeUser && (activeUser.profile_name === track.uploader_name || activeUser.is_admin);
+          
+          let actionMenuHTML = '';
+          if (canManage) {
+            actionMenuHTML = `
+              <div class="dropdown">
+                <button onclick="toggleDropdown(${track.id}, event)" class="btn btn-sm btn-icon" title="More Options">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                </button>
+                <div class="dropdown-menu" id="dropdown-${track.id}">
+                  <button onclick='openEditModal(${JSON.stringify(track).replace(/'/g, "&apos;")}, event)' class="dropdown-item">
+                    ✏️ Edit Track
+                  </button>
+                  <button onclick="deleteTrack(${track.id}, '${track.title.replace(/'/g, "\\'")}', event)" class="dropdown-item danger">
+                    🗑️ Delete Track
+                  </button>
+                </div>
+              </div>
+            `;
+          }
 
           tracksHTML += `
             <div class="audio-item" data-song='${JSON.stringify(track).replace(/'/g, "&apos;")}' onclick="toggleTrackSelection(this, '${catClass}', event)">
@@ -362,7 +469,7 @@
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   <span class="btn-text">Download (.ptunes)</span>
                 </button>
-                ${deleteBtnHTML}
+                ${actionMenuHTML}
               </div>
             </div>
           `;
@@ -388,8 +495,93 @@
       });
     }
 
+    // Open Edit Modal with Pre-filled Data
+    function openEditModal(track, event) {
+      if (event) event.stopPropagation();
+      document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
+
+      document.getElementById('editTrackId').value = track.id;
+      document.getElementById('editCategoryName').value = track.category_name;
+      document.getElementById('editSongTitle').value = track.title;
+      document.getElementById('editArtistName').value = track.artist_name;
+      document.getElementById('editIconKey').value = track.icon_key || 'cassette';
+      document.getElementById('editSongLyrics').value = track.lyrics || '';
+      
+      // Reset file inputs
+      document.getElementById('editAudioFile').value = '';
+      document.getElementById('editArtFile').value = '';
+
+      openModal('editModal');
+    }
+
+    // Save Track Edits
+    async function handleSaveEdit() {
+      const trackId = document.getElementById('editTrackId').value;
+      const categoryName = document.getElementById('editCategoryName').value.trim();
+      const title = document.getElementById('editSongTitle').value.trim();
+      const artistName = document.getElementById('editArtistName').value.trim();
+      const iconKey = document.getElementById('editIconKey').value;
+      const lyrics = document.getElementById('editSongLyrics').value.trim() || null;
+
+      const audioInput = document.getElementById('editAudioFile').files[0];
+      const artInput = document.getElementById('editArtFile').files[0];
+
+      if (!categoryName || !title || !artistName) {
+        alert("Please fill in Category, Title, and Artist.");
+        return;
+      }
+
+      const saveBtn = document.getElementById('saveEditBtn');
+      saveBtn.innerText = "Saving Changes...";
+      saveBtn.disabled = true;
+
+      try {
+        const updatePayload = {
+          category_name: categoryName,
+          title: title,
+          artist_name: artistName,
+          icon_key: iconKey,
+          lyrics: lyrics
+        };
+
+        // Replace Audio file if selected
+        if (audioInput) {
+          const audioFileName = `${crypto.randomUUID()}.mp3`;
+          await supabaseClient.storage.from('ptunes-files').upload(audioFileName, audioInput);
+          const { data: audioUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(audioFileName);
+          updatePayload.audio_url = audioUrlData.publicUrl;
+        }
+
+        // Replace Cover Art image if selected
+        if (artInput) {
+          const artFileName = `${crypto.randomUUID()}.img`;
+          await supabaseClient.storage.from('ptunes-files').upload(artFileName, artInput);
+          const { data: artUrlData } = supabaseClient.storage.from('ptunes-files').getPublicUrl(artFileName);
+          updatePayload.art_url = artUrlData.publicUrl;
+        }
+
+        const { error } = await supabaseClient.from('audio_tracks').update(updatePayload).eq('id', trackId);
+
+        if (!error) {
+          alert("Audio track updated successfully!");
+          closeModal('editModal');
+          loadCategories();
+        } else {
+          alert("Failed to update track: " + error.message);
+        }
+      } catch (err) {
+        alert("Error saving edits: " + err.message);
+      } finally {
+        saveBtn.innerText = "Save Changes";
+        saveBtn.disabled = false;
+      }
+    }
+
     // Delete Single Track Function
-    async function deleteTrack(trackId, trackTitle) {
+    async function deleteTrack(trackId, trackTitle, event) {
+      if (event) event.stopPropagation();
+      document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('show'));
+
       if (!activeUser) {
         alert("Please sign in to delete tracks.");
         return;
