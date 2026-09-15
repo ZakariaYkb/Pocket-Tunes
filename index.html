@@ -217,39 +217,54 @@
       flex: 1;
       -webkit-appearance: none;
       appearance: none;
-      height: 4px;
-      border-radius: 999px;
+      height: 6px;
+      border-radius: 3px;
       background: var(--track-bg);
       outline: none;
+      border: none;
       cursor: pointer;
       transition: height 0.15s ease, background 0.15s ease;
     }
     .progress-slider:hover {
-      height: 6px;
+      height: 8px;
     }
+
+    /* WebKit Thumb (Chrome, Safari, Edge) */
     .progress-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .progress-slider:hover::-webkit-slider-thumb {
+      transform: scale(1.2);
+      background: var(--accent-primary-hover);
+    }
+
+    /* Firefox Thumb & Track Reset */
+    .progress-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border: none;
       border-radius: 50%;
       background: var(--accent-primary);
       box-shadow: 0 1px 4px rgba(0,0,0,0.25);
       cursor: pointer;
       transition: transform 0.15s ease, background 0.15s ease;
     }
-    .progress-slider:hover::-webkit-slider-thumb {
-      transform: scale(1.25);
+    .progress-slider:hover::-moz-range-thumb {
+      transform: scale(1.2);
       background: var(--accent-primary-hover);
     }
-    .progress-slider::-moz-range-thumb {
-      width: 12px;
-      height: 12px;
+    .progress-slider::-moz-range-track {
+      background: transparent;
       border: none;
-      border-radius: 50%;
-      background: var(--accent-primary);
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.15s ease;
     }
 
     /* 3-Dots Dropdown Menu */
@@ -322,7 +337,7 @@
 
       .modal-content { padding: 18px; }
     }
-  </style>
+</style>
 </head>
 <body>
 
