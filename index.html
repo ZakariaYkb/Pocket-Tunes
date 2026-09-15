@@ -212,60 +212,69 @@
       font-weight: 500;
     }
 
-    /* Modern Sleek Progress Bar Range Input */
-    .progress-slider {
-      flex: 1;
-      -webkit-appearance: none;
-      appearance: none;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--track-bg);
-      outline: none;
-      border: none;
-      cursor: pointer;
-      transition: height 0.15s ease, background 0.15s ease;
-    }
-    .progress-slider:hover {
-      height: 8px;
-    }
+/* Hard reset on the slider track */
+.progress-slider {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  width: 100%;
+  height: 4px !important; /* Forces a thin line instead of a box/tube */
+  border-radius: 2px !important;
+  background: var(--track-bg, #30363d) !important;
+  outline: none !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  cursor: pointer;
+  box-shadow: none !important;
+}
 
-    /* WebKit Thumb (Chrome, Safari, Edge) */
-    .progress-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent-primary);
-      box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-      border: none;
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.15s ease;
-    }
-    .progress-slider:hover::-webkit-slider-thumb {
-      transform: scale(1.2);
-      background: var(--accent-primary-hover);
-    }
+/* Chrome, Safari, Edge, Opera Thumb */
+.progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: var(--accent-primary, #58a6ff) !important;
+  border: none !important;
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.6) !important; /* Accent glow */
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease !important;
+}
 
-    /* Firefox Thumb & Track Reset */
-    .progress-slider::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border: none;
-      border-radius: 50%;
-      background: var(--accent-primary);
-      box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-      cursor: pointer;
-      transition: transform 0.15s ease, background 0.15s ease;
-    }
-    .progress-slider:hover::-moz-range-thumb {
-      transform: scale(1.2);
-      background: var(--accent-primary-hover);
-    }
-    .progress-slider::-moz-range-track {
-      background: transparent;
-      border: none;
-    }
+/* Firefox Thumb */
+.progress-slider::-moz-range-thumb {
+  -moz-appearance: none !important;
+  appearance: none !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background: var(--accent-primary, #58a6ff) !important;
+  border: none !important;
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.6) !important;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease !important;
+}
+
+/* Firefox Track Reset */
+.progress-slider::-moz-range-track {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Hover & Active Animation (Pop & Glow effect) */
+.progress-slider:hover::-webkit-slider-thumb,
+.progress-slider:active::-webkit-slider-thumb {
+  transform: scale(1.4);
+  box-shadow: 0 0 14px rgba(88, 166, 255, 0.9), 0 0 20px rgba(88, 166, 255, 0.4);
+}
+
+.progress-slider:hover::-moz-range-thumb,
+.progress-slider:active::-moz-range-thumb {
+  transform: scale(1.4);
+  box-shadow: 0 0 14px rgba(88, 166, 255, 0.9), 0 0 20px rgba(88, 166, 255, 0.4);
+}
 
     /* 3-Dots Dropdown Menu */
     .dropdown { position: relative; display: inline-block; }
