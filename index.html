@@ -369,6 +369,9 @@
         <p style="margin:4px 0 0; color:#57606a; font-size: 0.9em;">Click play to preview audio, use the scrub bar, or download.</p>
       </div>
       <div class="header-buttons">
+        <button id="sortToggleBtn" class="btn btn-outline" onclick="toggleSortOrder()">
+          <span id="sortIcon">⬇️</span> Sort: A to Z
+        </button>
         <button onclick="openModal('authModal')" class="btn btn-outline" id="authBtn">Creator Sign In / Apply</button>
         <button onclick="openUploadModal()" class="btn">+ Add Audio</button>
       </div>
@@ -529,6 +532,7 @@
     let allTracks = []; 
     const trackMap = new Map();
     let searchDebounceTimer = null;
+    let currentSortOrder = 'ASC';
 
     // Singleton Audio Player Management
     let currentAudioPlayer = null;
@@ -609,6 +613,31 @@
       if (targetMenu) targetMenu.classList.toggle('show');
     }
 
+    // --- SORTING ENGINE ---
+    function sortCategories(categories) {
+      if (!Array.isArray(categories)) return [];
+      return [...categories].sort((a, b) => {
+        const nameA = String(a || '').toLowerCase();
+        const nameB = String(b || '').toLowerCase();
+        const comp = nameA.localeCompare(nameB);
+        return currentSortOrder === 'ASC' ? comp : -comp;
+      });
+    }
+
+    function toggleSortOrder() {
+      currentSortOrder = currentSortOrder === 'ASC' ? 'DESC' : 'ASC';
+      
+      const sortBtn = document.getElementById('sortToggleBtn');
+      if (sortBtn) {
+        sortBtn.innerHTML = currentSortOrder === 'ASC' 
+          ? `<span>⬇️</span> Sort: A to Z` 
+          : `<span>⬆️</span> Sort: Z to A`;
+      }
+
+      const query = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
+      renderCategories(query); 
+    }
+
     async function loadCategories() {
       const container = document.getElementById('categoriesContainer');
       const { data: songs, error } = await supabaseClient.from('audio_tracks').select('*').order('id', { ascending: false });
@@ -620,10 +649,9 @@
 
       allTracks = songs;
       trackMap.clear();
-      songs.forEach(track => trackMap.set(track.id, track));
+      songs.forEach(song => trackMap.set(song.id, song));
 
-      const currentQuery = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
-      renderCategories(currentQuery);
+      renderCategories();
     }
 
     function handleSearch() {
@@ -636,6 +664,8 @@
 
     function renderCategories(query = '') {
       const container = document.getElementById('categoriesContainer');
+      if (!container) return;
+      
       const cleanQuery = query.toLowerCase().trim();
 
       const filteredSongs = allTracks.filter(song => {
@@ -654,20 +684,23 @@
         return;
       }
 
-      const categories = {};
+      const categoriesMap = {};
       filteredSongs.forEach(song => {
-        const cat = song.category_name;
-        if (!categories[cat]) {
-          categories[cat] = { creator: song.uploader_name, tracks: [] };
+        const cat = song.category_name || song.category || 'Uncategorized';
+        if (!categoriesMap[cat]) {
+          categoriesMap[cat] = { creator: song.uploader_name || 'Creator', tracks: [] };
         }
-        categories[cat].tracks.push(song);
+        categoriesMap[cat].tracks.push(song);
       });
 
       container.innerHTML = '';
       const isSearching = cleanQuery.length > 0;
 
-      Object.keys(categories).forEach(catName => {
-        const catData = categories[catName];
+      // Apply dynamic A-Z / Z-A Sorting to category names
+      const sortedCategoryNames = sortCategories(Object.keys(categoriesMap));
+
+      sortedCategoryNames.forEach(catName => {
+        const catData = categoriesMap[catName];
         const catClass = catName.replace(/\s+/g, '_');
         let tracksHTML = '';
 
@@ -720,7 +753,6 @@
                 </div>
               </div>
               
-              <!-- Expandable Progress Bar Drawer for Mobile & Desktop -->
               <div class="audio-player-drawer ${isPlaying ? 'active' : ''}" id="drawer-${track.id}">
                 <div class="progress-container" onclick="event.stopPropagation()">
                   <span id="current-time-${track.id}">0:00</span>
@@ -754,7 +786,6 @@
       });
     }
 
-    // Singleton Audio Preview Controller with Scrubbing Support
     function toggleAudioPreview(trackId, event) {
       if (event) event.stopPropagation();
 
@@ -764,7 +795,6 @@
         return;
       }
 
-      // 1. If clicking the currently playing track -> Pause & Close drawer
       if (currentPlayingTrackId === trackId && currentAudioPlayer) {
         currentAudioPlayer.pause();
         stopProgressLoop();
@@ -774,7 +804,6 @@
         return;
       }
 
-      // 2. Stop and reset any previously playing audio track cleanly
       if (currentAudioPlayer) {
         currentAudioPlayer.pause();
         stopProgressLoop();
@@ -783,7 +812,6 @@
         }
       }
 
-      // 3. Initialize new audio playback stream
       currentPlayingTrackId = trackId;
       currentAudioPlayer = new Audio(track.audio_url);
       
@@ -896,7 +924,7 @@
       if (!track) return;
 
       document.getElementById('editTrackId').value = track.id;
-      document.getElementById('editCategoryName').value = track.category_name;
+      document.getElementById('editCategoryName').value = track.category_name || track.category || '';
       document.getElementById('editSongTitle').value = track.title;
       document.getElementById('editArtistName').value = track.artist_name;
       document.getElementById('editIconKey').value = track.icon_key || 'cassette';
@@ -1094,7 +1122,7 @@
 
       const manifest = {
         format: 1,
-        category: song.category_name,
+        category: song.category_name || song.category,
         icon: song.icon_key || "cassette",
         songs: [{
           title: song.title,
@@ -1322,7 +1350,8 @@
         closeModal('authModal');
         alert(`Welcome back, ${user.profile_name}!`);
         if (user.is_admin) {
-          document.getElementById('adminPanel').style.display = 'block';
+          const adminPanel = document.getElementById('adminPanel');
+          if (adminPanel) adminPanel.style.display = 'block';
           loadPendingUsers();
         }
         loadCategories();
@@ -1362,6 +1391,8 @@
         .eq('is_verified', false);
 
       const container = document.getElementById('pendingUsersList');
+      if (!container) return;
+
       if (error || !pending || pending.length === 0) {
         container.innerHTML = '<p>No pending applications.</p>';
         return;
@@ -1401,12 +1432,16 @@
       }
     }
 
-    updateAuthButtonState();
-    loadCategories();
-    if (activeUser && activeUser.is_admin) {
-      document.getElementById('adminPanel').style.display = 'block';
-      loadPendingUsers();
-    }
-  </script>
+    // --- INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', () => {
+      updateAuthButtonState();
+      loadCategories();
+      if (activeUser && activeUser.is_admin) {
+        const adminPanel = document.getElementById('adminPanel');
+        if (adminPanel) adminPanel.style.display = 'block';
+        loadPendingUsers();
+      }
+    });
+</script>
 </body>
 </html>
